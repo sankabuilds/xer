@@ -1,0 +1,5 @@
+*.txt
+cookies.json
+
+# Rust
+target
