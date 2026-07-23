@@ -2,6 +2,8 @@
 name = "xer"
 version = "0.1.3"
 edition = "2024"
+description = "Xer - Download twitter bookmarks"
+keywords = ["cli", "x", "twitter", "twitter downloader"]
 
 [dependencies]
 anyhow = "1.0.103"
