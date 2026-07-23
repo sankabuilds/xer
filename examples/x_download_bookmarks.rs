@@ -1,5 +1,5 @@
 use anyhow::{Context, Result};
-use xer::{
+use xxer::{
     downloader::x::XDownloaderError,
     site::x::{ViewType, XTwitter},
 };

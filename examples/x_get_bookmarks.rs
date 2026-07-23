@@ -1,5 +1,5 @@
 use anyhow::{Context, Result};
-use xer::site::x::{ViewType, XTwitter};
+use xxer::site::x::{ViewType, XTwitter};
 
 #[tokio::main]
 async fn main() -> Result<()> {

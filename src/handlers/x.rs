@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use std::io::Write;
 
-use xer::{
+use xxer::{
     downloader::x::XDownloaderError,
     site::x::{Slide, ViewType, XTwitter},
 };
