@@ -78,7 +78,7 @@ async fn request(url: &str, file_name: &str) -> Result<(), XDownloaderError> {
     while let Some(chunk) = res.chunk().await.map_err(|err| {
         pb.finish_and_clear();
         print!("{}\n", &path.red());
-        let _ = std::io::stdout().flush();
+        let _ = std::io::stdout().flush(); // is there a better way? 
 
         err
     })? {
