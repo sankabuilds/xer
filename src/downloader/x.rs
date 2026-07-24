@@ -137,7 +137,7 @@ impl DownloaderOptions {
                     continue;
                 }
 
-                eprint!("failed to download: {} -> {}", slide.get_file_name(), err);
+                eprintln!("failed to download: {} -> {}", slide.get_file_name(), err);
                 failed_job_count += 1;
             }
 
