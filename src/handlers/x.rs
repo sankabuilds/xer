@@ -1,8 +1,8 @@
 use anyhow::{Context, Result};
-use std::io::Write;
+use std::{io::Write, time::Duration};
 
 use xxer::{
-    downloader::x::XDownloaderError,
+    downloader::x::{DownloaderOptions, XDownloaderError},
     site::x::{Slide, ViewType, XTwitter},
 };
 
@@ -32,15 +32,10 @@ pub async fn bookmarks(x_bookmarks_args: &XBookmarksArgs, args: &Cli) -> Result<
                 .context("failed to get the ViewType")?;
         }
 
-        for slide in slides {
-            if let Err(err) = slide.download().await {
-                if matches!(err, XDownloaderError::FileAlreadyExists(_)) {
-                    continue;
-                }
-
-                return Err(err.into());
-            }
-        }
+        DownloaderOptions::new()
+            .timeout(Duration::from_millis(100))
+            .download(&slides)
+            .await;
     } else {
         anyhow::bail!("Site requires a cookie file. see --help");
     }
