@@ -2,7 +2,7 @@ use anyhow::{Context, Result};
 use std::{io::Write, time::Duration};
 
 use xxer::{
-    downloader::x::{DownloaderOptions, XDownloaderError},
+    downloader::x::DownloaderOptions,
     site::x::{Slide, ViewType, XTwitter},
 };
 
