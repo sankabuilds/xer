@@ -75,7 +75,13 @@ async fn request(url: &str, file_name: &str) -> Result<(), XDownloaderError> {
 
     pb.set_prefix(format!("{}", file_name.yellow()));
 
-    while let Some(chunk) = res.chunk().await? {
+    while let Some(chunk) = res.chunk().await.map_err(|err| {
+        pb.finish_and_clear();
+        print!("{}\n", &path.red());
+        let _ = std::io::stdout().flush();
+
+        err
+    })? {
         file.write_all(&chunk)?;
         pb.inc(chunk.len() as u64);
     }
