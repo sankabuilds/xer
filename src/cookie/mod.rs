@@ -21,6 +21,8 @@ pub enum XCookieError {
     HeaderValueConversionFailed(ToStrError),
 }
 
+// use Cookie-Editor chrome extension to export cookies
+// https://chromewebstore.google.com/detail/cookie-editor/hlkenndednhfkekhgcdicdfddnkalmdm
 #[derive(Serialize, Deserialize)]
 struct Cookie {
     domain: String,
