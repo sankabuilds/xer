@@ -33,6 +33,31 @@ pub enum XDownloaderError {
     Indicatif(#[from] TemplateError),
 }
 
+enum State<'a, 'b> {
+    Nominal { pb: &'a ProgressBar, path: &'b str },
+    Error { path: &'b str },
+    ErrorChunk { pb: &'a ProgressBar, path: &'b str },
+}
+
+fn reset_terminal(status: &State) {
+    match status {
+        State::Nominal { pb, path } => {
+            pb.finish_and_clear();
+            print!("{}\n", path.green());
+            std::io::stdout().flush().expect("stdout flush failed");
+        }
+        State::Error { path } => {
+            print!("{}\n", path.red());
+            std::io::stdout().flush().expect("stdout flush failed");
+        }
+        State::ErrorChunk { pb, path } => {
+            pb.finish_and_clear();
+            print!("{}\n", &path.red());
+            std::io::stdout().flush().expect("stdout flush failed");
+        }
+    }
+}
+
 async fn request(url: &str, file_name: &str) -> Result<(), XDownloaderError> {
     let path = format!("./{}", file_name);
 
@@ -58,16 +83,15 @@ async fn request(url: &str, file_name: &str) -> Result<(), XDownloaderError> {
         }
     };
 
+    let exit_state = State::Error { path: &path };
     let mut res = reqwest::get(url).await.map_err(|err| {
-        print!("{}\n", &path.red());
-        let _ = std::io::stdout().flush(); // is there a better way? 
+        reset_terminal(&exit_state);
 
         err
     })?;
 
     if res.status() != 200 {
-        print!("{}\n", &path.red());
-        let _ = std::io::stdout().flush();
+        reset_terminal(&exit_state);
 
         return Err(XDownloaderError::NotOk {
             status_code: res.status(),
@@ -104,10 +128,12 @@ async fn request(url: &str, file_name: &str) -> Result<(), XDownloaderError> {
 
     pb.set_prefix(format!("{}", file_name.yellow()));
 
+    let exit_state = State::ErrorChunk {
+        pb: &pb,
+        path: &path,
+    };
     while let Some(chunk) = res.chunk().await.map_err(|err| {
-        pb.finish_and_clear();
-        print!("{}\n", &path.red());
-        let _ = std::io::stdout().flush(); // is there a better way? 
+        reset_terminal(&exit_state);
 
         err
     })? {
@@ -115,9 +141,11 @@ async fn request(url: &str, file_name: &str) -> Result<(), XDownloaderError> {
         pb.inc(chunk.len() as u64);
     }
 
-    pb.finish_and_clear();
-    print!("{}\n", &path.green());
-    std::io::stdout().flush()?;
+    let exit_state = State::Nominal {
+        pb: &pb,
+        path: &path,
+    };
+    reset_terminal(&exit_state);
 
     Ok(())
 }
