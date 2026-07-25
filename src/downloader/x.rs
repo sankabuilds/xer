@@ -17,8 +17,11 @@ pub enum XDownloaderError {
     #[error("HTTP request failed: {0}")]
     Reqwest(#[from] reqwest::Error),
 
-    #[error("HTTP request failed. Status Code: {0}")]
-    NotOk(StatusCode),
+    #[error("HTTP request failed. Status Code: {status_code}. Response Body: {response_body}")]
+    NotOk {
+        status_code: StatusCode,
+        response_body: String,
+    },
 
     #[error("Failed to download the slide. A file with same name already exists: {0}")]
     FileAlreadyExists(String),
@@ -52,10 +55,24 @@ async fn request(url: &str, file_name: &str) -> Result<(), XDownloaderError> {
         }
     };
 
-    let mut res = reqwest::get(url).await?.error_for_status()?;
+    let mut res = reqwest::get(url).await.map_err(|err| {
+        print!("{}\n", &path.red());
+        let _ = std::io::stdout().flush(); // is there a better way? 
+
+        err
+    })?;
 
     if res.status() != 200 {
-        return Err(XDownloaderError::NotOk(res.status()));
+        return Err(XDownloaderError::NotOk {
+            status_code: res.status(),
+            response_body: {
+                let body = res.text().await.unwrap_or(
+                    "Couldn't get the response body. Error while fetching the body".into(),
+                );
+
+                body
+            },
+        });
     }
 
     let content_length = res.content_length().unwrap_or(3e+9 as u64); // ??? idk
