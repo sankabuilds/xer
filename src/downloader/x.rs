@@ -17,8 +17,11 @@ pub enum XDownloaderError {
     #[error("HTTP request failed: {0}")]
     Reqwest(#[from] reqwest::Error),
 
-    #[error("HTTP request failed. Status Code: {status_code}. Response Body: {response_body}")]
+    #[error(
+        "HTTP request failed. ({url}) Status Code: {status_code}. Response Body: {response_body}"
+    )]
     NotOk {
+        url: String,
         status_code: StatusCode,
         response_body: String,
     },
@@ -65,10 +68,15 @@ async fn request(url: &str, file_name: &str) -> Result<(), XDownloaderError> {
     if res.status() != 200 {
         return Err(XDownloaderError::NotOk {
             status_code: res.status(),
+            url: res.url().as_str().into(),
             response_body: {
-                let body = res.text().await.unwrap_or(
+                let mut body = res.text().await.unwrap_or(
                     "Couldn't get the response body. Error while fetching the body".into(),
                 );
+
+                if body.chars().count() == 0 {
+                    body = "Empty".into()
+                }
 
                 body
             },
