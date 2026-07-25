@@ -66,6 +66,9 @@ async fn request(url: &str, file_name: &str) -> Result<(), XDownloaderError> {
     })?;
 
     if res.status() != 200 {
+        print!("{}\n", &path.red());
+        let _ = std::io::stdout().flush();
+
         return Err(XDownloaderError::NotOk {
             status_code: res.status(),
             url: res.url().as_str().into(),
