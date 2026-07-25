@@ -11,10 +11,10 @@ use crate::site::x::{Quality, Slide};
 
 #[derive(Error, Debug)]
 pub enum XDownloaderError {
-    #[error("file I/O failed")]
+    #[error("file I/O failed: {0}")]
     Io(#[from] std::io::Error),
 
-    #[error("HTTP request failed")]
+    #[error("HTTP request failed: {0}")]
     Reqwest(#[from] reqwest::Error),
 
     #[error("HTTP request failed. Status Code: {0}")]
@@ -23,7 +23,7 @@ pub enum XDownloaderError {
     #[error("Failed to download the slide. A file with same name already exists: {0}")]
     FileAlreadyExists(String),
 
-    #[error("failed to set up the progress bar")]
+    #[error("failed to set up the progress bar: {0}")]
     Indicatif(#[from] TemplateError),
 }
 

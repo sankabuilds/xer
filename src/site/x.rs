@@ -23,7 +23,7 @@ fn format_msg(msg: Option<&String>) -> String {
 
 #[derive(Error, Debug)]
 pub enum XError {
-    #[error("HTTP request failed")]
+    #[error("HTTP request failed: {0}")]
     Reqwest(#[from] reqwest::Error),
 
     #[error("You have zero bookmarks")]
@@ -47,7 +47,7 @@ pub enum XError {
     #[error("returned an unexpected response shape: {path}: {msg}")]
     UnexpectedResponseShape { path: String, msg: String },
 
-    #[error("Http request preparation failed")]
+    #[error("Http request preparation failed: {0}")]
     CookieError(#[from] XCookieError),
 }
 
