@@ -2,12 +2,10 @@ use reqwest::cookie::CookieStore;
 use reqwest::cookie::Jar;
 use reqwest::header::ToStrError;
 use reqwest::{self, Client};
-use serde::{Deserialize, Serialize};
-use serde_json;
-use std::fs;
-use std::io::BufReader;
 use std::sync::Arc;
 use thiserror::Error;
+
+use crate::cookie::common::parse_cookie_file;
 
 #[derive(Error, Debug)]
 pub enum XCookieError {
@@ -19,47 +17,6 @@ pub enum XCookieError {
 
     #[error("error while calling HeaderValue.to_str()")]
     HeaderValueConversionFailed(ToStrError),
-}
-
-// use Cookie-Editor chrome extension to export cookies
-// https://chromewebstore.google.com/detail/cookie-editor/hlkenndednhfkekhgcdicdfddnkalmdm
-#[derive(Serialize, Deserialize)]
-struct Cookie {
-    domain: String,
-    expiration_date: Option<f64>,
-    host_only: Option<bool>,
-    http_only: Option<bool>,
-    name: String,
-    path: String,
-    same_site: Option<String>,
-    secure: bool,
-    session: bool,
-    value: String,
-}
-
-fn parse_cookie_file(cookie_file: &str) -> Vec<Cookie> {
-    let file = {
-        match fs::File::open(cookie_file) {
-            Err(err) => {
-                panic!("parse_cookie_file: failed to open cookie file -> ({cookie_file}): {err}")
-            }
-            Ok(k) => k,
-        }
-    };
-
-    let rdr = BufReader::new(file);
-    let res: Vec<Cookie> = {
-        match serde_json::from_reader(rdr) {
-            Err(err) => {
-                panic!(
-                    "failed to parse the cookie file ({cookie_file}). invalid file content: {err}"
-                )
-            }
-            Ok(k) => k,
-        }
-    };
-
-    res
 }
 
 pub fn get_jar(cookie_file: &str) -> Jar {
