@@ -33,10 +33,10 @@ pub enum XDownloaderError {
     #[error("failed to set up the progress bar: {0}")]
     Indicatif(#[from] TemplateError),
 
-    #[error("failed to set up the progress bar: {0}")]
+    #[error("Invalid header value: {0}")]
     InvalidHeaderValue(#[from] InvalidHeaderValue),
 
-    #[error("partial request failed status code: {status_code} for ({url})")]
+    #[error("Partial request failed status code: {status_code} for ({url})")]
     PartialRequestFailed {
         status_code: StatusCode,
         url: String,
