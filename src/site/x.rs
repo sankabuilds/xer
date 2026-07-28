@@ -13,6 +13,7 @@ use crate::cookie;
 use crate::cookie::x::XCookieError;
 use crate::downloader;
 use crate::downloader::x::XDownloaderError;
+use crate::site::common::Quality;
 
 fn format_msg(msg: Option<&String>) -> String {
     match msg {
@@ -128,12 +129,6 @@ pub struct VideoInfo {
     aspect_ratio: Vec<i32>,
     duration_millis: i32,
     variants: Vec<Variant>,
-}
-
-pub enum Quality {
-    Best,
-    Mid,
-    Low,
 }
 
 impl VideoInfo {

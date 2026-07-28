@@ -8,7 +8,8 @@ use std::time::Duration;
 use std::{fs, io};
 use thiserror::Error;
 
-use crate::site::x::{Quality, Slide};
+use crate::site::common::Quality;
+use crate::site::x::Slide;
 
 #[derive(Error, Debug)]
 pub enum XDownloaderError {
