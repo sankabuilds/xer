@@ -4,7 +4,7 @@ use clap::Parser;
 mod args;
 mod handlers;
 
-use args::{Cli, Commands, XCommands};
+use args::{Cli, Commands, InstagramCommands, XCommands};
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -14,6 +14,11 @@ async fn main() -> Result<()> {
         Commands::X(x_command) => match x_command {
             XCommands::Bookmarks(bookmark_args) => {
                 handlers::x::bookmarks(&bookmark_args, args).await?
+            }
+        },
+        Commands::Gram(gram_command) => match gram_command {
+            InstagramCommands::Bookmarks(bookmarks_args) => {
+                handlers::instagram::bookmarks(bookmarks_args, args).await?
             }
         },
     }

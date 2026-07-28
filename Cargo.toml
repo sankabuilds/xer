@@ -1,6 +1,6 @@
 [package]
 name = "xxer"
-version = "0.1.8"
+version = "0.2.0-alpha.1"
 edition = "2024"
 description = "Xer - Download twitter bookmarks"
 keywords = ["cli", "x", "twitter", "downloader"]
@@ -9,7 +9,7 @@ repository = "https://github.com/sankabuilds/xer"
 
 [[bin]]
 name = "xer"
-path = "src/main.rs"  
+path = "src/main.rs"
 
 [dependencies]
 anyhow = "1.0.103"

@@ -17,6 +17,10 @@ pub enum Commands {
     /// 𝕏 - Download X/Twitter media
     #[command(subcommand)]
     X(XCommands),
+
+    /// Instagram - Download Instagram media
+    #[command(subcommand)]
+    Gram(InstagramCommands),
 }
 
 #[derive(Subcommand)]
@@ -27,6 +31,23 @@ pub enum XCommands {
 
 #[derive(Args)]
 pub struct XBookmarksArgs {
+    /// Download all the available bookmarks
+    #[arg(short, long, default_value_t = false)]
+    pub all: bool,
+
+    /// Download bookmarks with a limit
+    #[arg(short, long, default_value_t = 100)]
+    pub limit: u32,
+}
+
+#[derive(Subcommand)]
+pub enum InstagramCommands {
+    /// 🔖 Download bookmarks
+    Bookmarks(InstagramBookmarksArgs),
+}
+
+#[derive(Args)]
+pub struct InstagramBookmarksArgs {
     /// Download all the available bookmarks
     #[arg(short, long, default_value_t = false)]
     pub all: bool,
