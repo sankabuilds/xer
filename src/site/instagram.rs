@@ -181,6 +181,7 @@ enum ProductType {
     Feed,
     /// Ad
     Ad,
+    IGTV,
 }
 
 /// ProductType::Clips
@@ -316,6 +317,7 @@ impl Instagram {
                     "carousel_container" => ProductType::CarouselContainer,
                     "feed" => ProductType::Feed,
                     "ad" => ProductType::Ad,
+                    "igtv" => ProductType::IGTV,
                     unknown => panic!("unknown product type: {}", unknown),
                 };
 
@@ -375,6 +377,9 @@ impl Instagram {
                         slide_list.push(feed.into());
                     }
                     ProductType::Ad => {
+                        // TODO
+                    }
+                    ProductType::IGTV => {
                         // TODO
                     }
                 }
