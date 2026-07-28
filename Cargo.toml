@@ -2,8 +2,8 @@
 name = "xxer"
 version = "0.2.0-alpha.1"
 edition = "2024"
-description = "Xer - Download twitter bookmarks"
-keywords = ["cli", "x", "twitter", "downloader"]
+description = "Xer - Download social media bookmarks"
+keywords = ["cli", "x", "twitter", "downloader", "instagram", "reels"]
 license = "MIT"
 repository = "https://github.com/sankabuilds/xer"
 
