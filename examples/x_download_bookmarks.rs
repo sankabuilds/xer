@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
 use xxer::{
-    downloader::x::XDownloaderError,
+    downloader::common::CommonDownloaderError,
     site::x::{ViewType, XTwitter},
 };
 
@@ -16,7 +16,7 @@ async fn main() -> Result<()> {
 
     for slide in slides {
         if let Err(err) = slide.download().await {
-            if matches!(err, XDownloaderError::FileAlreadyExists(_)) {
+            if matches!(err, CommonDownloaderError::FileAlreadyExists(_)) {
                 continue;
             }
 

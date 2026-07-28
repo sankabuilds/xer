@@ -12,7 +12,7 @@ use thiserror::Error;
 use crate::cookie;
 use crate::cookie::x::XCookieError;
 use crate::downloader;
-use crate::downloader::x::XDownloaderError;
+use crate::downloader::common::CommonDownloaderError;
 use crate::site::common::Quality;
 
 fn format_msg(msg: Option<&String>) -> String {
@@ -161,7 +161,7 @@ pub enum Slide {
 }
 
 impl Slide {
-    pub async fn download(&self) -> Result<(), XDownloaderError> {
+    pub async fn download(&self) -> Result<(), CommonDownloaderError> {
         downloader::x::fetch(self).await
     }
 
