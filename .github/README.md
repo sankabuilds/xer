@@ -1,5 +1,7 @@
 # xer
 
+[![Crates.io](https://img.shields.io/crates/v/xxer.svg)](https://crates.io/crates/xxer)
+
 _Xer_ is a simple CLI tool that you can use to download bookmarks from your social media accounts.
 
 ### Currently Supported Sites:
