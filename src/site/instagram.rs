@@ -15,7 +15,16 @@ use crate::{
 pub const INSTAGRAM: &str = "https://www.instagram.com";
 
 #[derive(Error, Debug)]
-pub enum InstagramError {}
+pub enum InstagramError {
+    #[error("Reqwest error: {0}")]
+    ReqwestError(#[from] reqwest::Error),
+
+    #[error("Serde error: {0}")]
+    SerdeError(#[from] serde_json::Error),
+
+    #[error("Unexpected response: {0}")]
+    UnexpectedResponse(String),
+}
 
 #[derive(Debug)]
 pub enum Slide {
@@ -308,35 +317,42 @@ impl Instagram {
                 req = req.query(&[("max_id", next_id)]);
             }
 
-            let res = req.send().await.unwrap();
+            let res = req.send().await?;
 
-            let body = res.text().await.unwrap();
-            let res = serde_json::Value::from_str(&body).unwrap();
+            let body = res.text().await?;
+            let res = serde_json::Value::from_str(&body)?;
 
-            for item in res["items"].as_array().unwrap() {
-                let item_type: ProductType = match item["media"]["product_type"].as_str().unwrap() {
-                    "clips" => ProductType::Clips,
-                    "carousel_container" => ProductType::CarouselContainer,
-                    "feed" => ProductType::Feed,
-                    "ad" => ProductType::Ad,
-                    "igtv" => ProductType::IGTV,
-                    unknown => panic!("unknown product type: {}", unknown),
-                };
+            for item in res["items"].as_array().ok_or_else(|| {
+                InstagramError::UnexpectedResponse("could not find `items` array".to_owned())
+            })? {
+                let item_type: ProductType =
+                    match item["media"]["product_type"].as_str().ok_or_else(|| {
+                        InstagramError::UnexpectedResponse(
+                            "could not find `product_type` in the item".to_owned(),
+                        )
+                    })? {
+                        "clips" => ProductType::Clips,
+                        "carousel_container" => ProductType::CarouselContainer,
+                        "feed" => ProductType::Feed,
+                        "ad" => ProductType::Ad,
+                        "igtv" => ProductType::IGTV,
+                        unknown => panic!("unknown product type: {}", unknown),
+                    };
 
-                let p_pk = item["media"]["pk"].as_str().unwrap();
+                let p_pk = item["media"]["pk"].as_str().ok_or_else(|| {
+                    InstagramError::UnexpectedResponse("could not find `pk` in the item".to_owned())
+                })?;
 
                 match item_type {
                     ProductType::Clips => {
-                        let mut clip =
-                            serde_json::from_value::<Clip>(item["media"].clone()).unwrap();
+                        let mut clip = serde_json::from_value::<Clip>(item["media"].clone())?;
                         clip.pk = p_pk.to_owned();
 
                         slide_list.push(clip.into());
                     }
                     ProductType::CarouselContainer => {
                         let carousel_media =
-                            serde_json::from_value::<CarouselContainer>(item["media"].clone())
-                                .unwrap();
+                            serde_json::from_value::<CarouselContainer>(item["media"].clone())?;
 
                         for carousel_item in carousel_media.carousel_media {
                             match carousel_item {
@@ -372,8 +388,7 @@ impl Instagram {
                         }
                     }
                     ProductType::Feed => {
-                        let mut feed =
-                            serde_json::from_value::<Feed>(item["media"].clone()).unwrap();
+                        let mut feed = serde_json::from_value::<Feed>(item["media"].clone())?;
                         feed.pk = p_pk.to_owned();
 
                         slide_list.push(feed.into());
@@ -389,8 +404,21 @@ impl Instagram {
 
             info!("Slide count: {}", slide_list.len());
 
-            if res["more_available"].as_bool().unwrap() {
-                next_max_id = Some(res["next_max_id"].as_str().unwrap().to_owned());
+            if res["more_available"].as_bool().ok_or_else(|| {
+                InstagramError::UnexpectedResponse(
+                    "could not find `more_available` field in the response".to_owned(),
+                )
+            })? {
+                next_max_id = Some(
+                    res["next_max_id"]
+                        .as_str()
+                        .ok_or_else(|| {
+                            InstagramError::UnexpectedResponse(
+                                "could not find `next_max_id` field in the response".to_owned(),
+                            )
+                        })?
+                        .to_owned(),
+                );
             } else {
                 break;
             }
