@@ -3,6 +3,7 @@
 use log::info;
 use reqwest::Url;
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use std::{fmt::Display, str::FromStr, sync::Arc};
 use thiserror::Error;
 
@@ -24,6 +25,9 @@ pub enum InstagramError {
 
     #[error("Unexpected response: {0}")]
     UnexpectedResponse(String),
+
+    #[error("Unknown product type: {p_type}\n\nItem: {item:?}")]
+    UnknownProductType { p_type: String, item: Value },
 }
 
 #[derive(Debug)]
@@ -336,7 +340,12 @@ impl Instagram {
                         "feed" => ProductType::Feed,
                         "ad" => ProductType::Ad,
                         "igtv" => ProductType::IGTV,
-                        unknown => panic!("unknown product type: {}", unknown),
+                        unknown => {
+                            return Err(InstagramError::UnknownProductType {
+                                p_type: unknown.to_owned(),
+                                item: item.clone(),
+                            });
+                        }
                     };
 
                 let p_pk = item["media"]["pk"].as_str().ok_or_else(|| {
