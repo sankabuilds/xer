@@ -1,5 +1,6 @@
 #![allow(dead_code)]
 
+use log::info;
 use reqwest::StatusCode;
 use reqwest::Url;
 use reqwest::cookie::Jar;
@@ -228,6 +229,8 @@ impl XTwitter {
     }
 
     async fn get_bookmarks(&self, limit: &Limit) -> Result<Vec<Slide>, XError> {
+        info!("Getting bookmarks!");
+
         let mut cursor: Option<String> = None;
 
         let mut slides_arr: Vec<Slide> = vec![];
@@ -386,6 +389,8 @@ impl XTwitter {
                     }
                 }
             }
+
+            info!("Slide count: {}", slides_arr.len());
         }
 
         if slides_arr.is_empty() {

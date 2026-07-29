@@ -1,5 +1,5 @@
 use anyhow::{Context, Result};
-use std::{io::Write, time::Duration};
+use std::time::Duration;
 
 use xxer::{
     downloader::x::DownloaderOptions,
@@ -13,17 +13,11 @@ pub async fn bookmarks(x_bookmarks_args: &XBookmarksArgs, args: &Cli) -> Result<
         let slides: Vec<Slide>;
 
         if x_bookmarks_args.all {
-            print!("Gathering all your bookmarks. This may take some time!");
-            std::io::stdout().flush()?;
+            eprintln!("Gathering all your bookmarks. This may take some time!");
 
             slides = XTwitter::new(cookie_file)
                 .get(ViewType::Bookmarks, None)
                 .await
-                .map(|res: Vec<Slide>| {
-                    print!("\r\x1B[2K");
-
-                    res
-                })
                 .context("failed to get the ViewType")?;
         } else {
             slides = XTwitter::new(cookie_file)
