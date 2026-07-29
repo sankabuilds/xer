@@ -6,6 +6,7 @@ description = "Xer - Download social media bookmarks"
 keywords = ["cli", "x", "twitter", "downloader", "instagram"]
 license = "MIT"
 repository = "https://github.com/sankabuilds/xer"
+readme = ".github/README.md"
 
 [[bin]]
 name = "xer"
