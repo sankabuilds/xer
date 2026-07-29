@@ -1,5 +1,6 @@
 #![allow(dead_code)]
 
+use log::info;
 use reqwest::Url;
 use serde::{Deserialize, Serialize};
 use std::{fmt::Display, str::FromStr, sync::Arc};
@@ -283,6 +284,7 @@ enum Limit {
 
 impl Instagram {
     async fn get_bookmarks(&self, limit: &Limit) -> Result<Vec<Slide>, InstagramError> {
+        info!("Getting bookmarks!");
         let mut slide_list: Vec<Slide> = Vec::new();
         let mut next_max_id: Option<String> = None;
 
@@ -384,6 +386,8 @@ impl Instagram {
                     }
                 }
             }
+
+            info!("Slide count: {}", slide_list.len());
 
             if res["more_available"].as_bool().unwrap() {
                 next_max_id = Some(res["next_max_id"].as_str().unwrap().to_owned());

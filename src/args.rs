@@ -8,6 +8,10 @@ pub struct Cli {
     #[arg(short, long)]
     pub cookie: Option<String>,
 
+    /// Verbose mode
+    #[arg(short, long)]
+    pub verbose: bool,
+
     #[command(subcommand)]
     pub commands: Commands,
 }

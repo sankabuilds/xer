@@ -10,10 +10,16 @@ use args::{Cli, Commands, InstagramCommands, XCommands};
 async fn main() -> Result<()> {
     let args = &Cli::parse();
 
+    if args.verbose {
+        env_logger::builder()
+            .filter_level(log::LevelFilter::Info)
+            .init();
+    }
+
     match &args.commands {
         Commands::X(x_command) => match x_command {
             XCommands::Bookmarks(bookmark_args) => {
-                handlers::x::bookmarks(&bookmark_args, args).await?
+                handlers::x::bookmarks(bookmark_args, args).await?
             }
         },
         Commands::Gram(gram_command) => match gram_command {
