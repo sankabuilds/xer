@@ -59,4 +59,7 @@ pub struct InstagramBookmarksArgs {
     /// Download bookmarks with a limit
     #[arg(short, long, default_value_t = 100)]
     pub limit: u32,
+
+    #[arg(long, hide = true, default_value_t = 100)]
+    pub timeout: u64,
 }

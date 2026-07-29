@@ -30,7 +30,7 @@ pub async fn bookmarks(
         }
 
         DownloaderOptions::new()
-            .timeout(Duration::from_millis(100))
+            .timeout(Duration::from_millis(instagram_bookmarks_args.timeout))
             .download(&slides)
             .await;
     } else {
