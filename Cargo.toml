@@ -1,6 +1,6 @@
 [package]
 name = "xxer"
-version = "0.2.0-beta.1"
+version = "0.2.0"
 edition = "2024"
 description = "Xer - Download social media bookmarks"
 keywords = ["cli", "x", "twitter", "downloader", "instagram"]
