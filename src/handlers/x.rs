@@ -27,7 +27,7 @@ pub async fn bookmarks(x_bookmarks_args: &XBookmarksArgs, args: &Cli) -> Result<
         }
 
         DownloaderOptions::new()
-            .timeout(Duration::from_millis(100))
+            .timeout(Duration::from_millis(x_bookmarks_args.timeout))
             .download(&slides)
             .await;
     } else {
