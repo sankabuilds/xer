@@ -11,6 +11,16 @@ _Xer_ is a simple CLI tool that you can use to download bookmarks from your soci
 | X (Twitter) | ✅     |
 | Instagram   | ✅     |
 
+### Installation
+
+- Prebuilt binaries available on the [releases page](https://github.com/sankabuilds/xer/releases/latest)
+
+- Install *xer* using Cargo
+
+```
+cargo install xxer
+```
+
 ### Usage
 
 ```
