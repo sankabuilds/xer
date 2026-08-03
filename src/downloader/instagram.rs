@@ -52,6 +52,7 @@ impl DownloaderOptions {
     pub async fn download(&self, jobs: Vec<Slide>, thread_count: Option<u8>) -> u64 {
         let failed_job_count = Arc::new(AtomicU64::new(0));
         let m = MultiProgress::new();
+        let tc = thread_count.unwrap_or(4) as usize;
 
         let mut handles = vec![];
 
@@ -77,7 +78,7 @@ impl DownloaderOptions {
             });
             handles.push(handle);
 
-            if handles.len() == thread_count.unwrap_or(4) as usize {
+            if handles.len() == tc {
                 for handle in std::mem::take(&mut handles) {
                     let _r = handle.await.unwrap();
                 }
