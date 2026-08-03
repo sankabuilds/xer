@@ -45,6 +45,9 @@ pub struct XBookmarksArgs {
 
     #[arg(long, hide = true, default_value_t = 100)]
     pub timeout: u64,
+
+    #[arg(long, hide = true, default_value_t = 4)]
+    pub thread_count: u8,
 }
 
 #[derive(Subcommand)]
@@ -65,4 +68,7 @@ pub struct InstagramBookmarksArgs {
 
     #[arg(long, hide = true, default_value_t = 100)]
     pub timeout: u64,
+
+    #[arg(long, hide = true, default_value_t = 4)]
+    pub thread_count: u8,
 }

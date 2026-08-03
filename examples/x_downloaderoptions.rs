@@ -18,7 +18,7 @@ async fn main() -> Result<()> {
 
     DownloaderOptions::new()
         .timeout(Duration::from_secs(2))
-        .download(&slides)
+        .download(slides, None)
         .await;
 
     Ok(())

@@ -31,7 +31,7 @@ pub async fn bookmarks(
 
         DownloaderOptions::new()
             .timeout(Duration::from_millis(instagram_bookmarks_args.timeout))
-            .download(&slides)
+            .download(slides, Some(instagram_bookmarks_args.thread_count))
             .await;
     } else {
         anyhow::bail!("Site requires a cookie file. see --help");

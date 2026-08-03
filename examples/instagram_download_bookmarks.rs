@@ -14,7 +14,7 @@ async fn main() -> Result<()> {
         .context("faild to get the ViewType")?;
 
     for slide in slides {
-        if let Err(err) = slide.download().await {
+        if let Err(err) = slide.download(None).await {
             if matches!(err, CommonDownloaderError::FileAlreadyExists(_)) {
                 continue;
             }

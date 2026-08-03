@@ -1,20 +1,29 @@
-use std::time::Duration;
+use indicatif::MultiProgress;
+use std::sync::atomic::Ordering::Relaxed;
+use std::{
+    sync::{Arc, atomic::AtomicU64},
+    time::Duration,
+};
+use tokio::spawn;
 
 use crate::{
     downloader::common::{CommonDownloaderError, request},
     site::instagram::Slide,
 };
 
-pub async fn fetch(slide: &Slide) -> Result<(), CommonDownloaderError> {
+pub async fn fetch(
+    slide: &Slide,
+    m_pb: Option<MultiProgress>,
+) -> Result<(), CommonDownloaderError> {
     let file_name = slide.get_file_name();
 
     match slide {
         Slide::Photo(p) => {
-            request(&p.url, &file_name).await?;
+            request(&p.url, &file_name, m_pb).await?;
         }
         Slide::Video(v) => {
             let url = &v.url;
-            request(url, &file_name).await?;
+            request(url, &file_name, m_pb).await?;
         }
     }
 
@@ -38,22 +47,43 @@ impl DownloaderOptions {
     }
 
     /// returns the count of failed jobs
-    pub async fn download(&self, jobs: &Vec<Slide>) -> u64 {
-        let mut failed_job_count = 0_u64;
+    ///  
+    /// default `thread_count` is 4
+    pub async fn download(&self, jobs: Vec<Slide>, thread_count: Option<u8>) -> u64 {
+        let failed_job_count = Arc::new(AtomicU64::new(0));
+        let m = MultiProgress::new();
+
+        let mut handles = vec![];
 
         for slide in jobs {
-            if let Err(err) = slide.download().await {
-                if matches!(err, CommonDownloaderError::FileAlreadyExists(_)) {
-                    continue;
+            let m_clone = m.clone();
+            let failed_job_count_clone = Arc::clone(&failed_job_count);
+
+            let handle = spawn(async move {
+                let m = m_clone.clone();
+
+                if let Err(err) = slide.download(Some(m_clone)).await {
+                    if matches!(err, CommonDownloaderError::FileAlreadyExists(_)) {
+                    } else {
+                        let _ = m.println(format!(
+                            "failed to download: {} -> {}",
+                            slide.get_file_name(),
+                            err
+                        ));
+
+                        failed_job_count_clone.fetch_add(1, Relaxed);
+                    }
                 }
+            });
+            handles.push(handle);
 
-                eprintln!("failed to download: {} -> {}", slide.get_file_name(), err);
-                failed_job_count += 1;
+            if handles.len() == thread_count.unwrap_or(4) as usize {
+                for handle in std::mem::take(&mut handles) {
+                    let _r = handle.await.unwrap();
+                }
             }
-
-            tokio::time::sleep(self.timeout).await;
         }
 
-        failed_job_count
+        failed_job_count.load(Relaxed)
     }
 }

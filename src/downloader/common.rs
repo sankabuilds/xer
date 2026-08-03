@@ -1,6 +1,6 @@
 use colored::Colorize;
 use indicatif::style::TemplateError;
-use indicatif::{ProgressBar, ProgressState, ProgressStyle};
+use indicatif::{MultiProgress, ProgressBar, ProgressState, ProgressStyle};
 use reqwest::header::{HeaderValue, InvalidHeaderValue, RANGE};
 use reqwest::{Client, StatusCode};
 use std::io::Write;
@@ -46,36 +46,60 @@ enum State<'a, 'b> {
     ErrorChunk { pb: &'a ProgressBar, path: &'b str },
 }
 
-fn reset_terminal(status: &State) {
+fn reset_terminal(status: &State, m_pb: &Option<MultiProgress>) {
     match status {
         State::Nominal { pb, path } => {
             pb.finish_and_clear();
-            print!("{}\n", path.green());
-            std::io::stdout().flush().expect("stdout flush failed");
+
+            if let Some(m) = m_pb {
+                let _ = m.println(format!("{}", path.green()));
+            } else {
+                print!("{}\n", path.green());
+                std::io::stdout().flush().expect("stdout flush failed");
+            }
         }
         State::Error { path } => {
-            print!("{}\n", path.red());
-            std::io::stdout().flush().expect("stdout flush failed");
+            if let Some(m) = m_pb {
+                let _ = m.println(format!("{}", path.red()));
+            } else {
+                print!("{}\n", path.red());
+                std::io::stdout().flush().expect("stdout flush failed");
+            }
         }
         State::ErrorChunk { pb, path } => {
             pb.finish_and_clear();
-            print!("{}\n", &path.red());
-            std::io::stdout().flush().expect("stdout flush failed");
+
+            if let Some(m) = m_pb {
+                let _ = m.println(format!("{}", path.red()));
+            } else {
+                print!("{}\n", &path.red());
+                std::io::stdout().flush().expect("stdout flush failed");
+            }
         }
     }
 }
 
-pub async fn request(url: &str, file_name: &str) -> Result<(), CommonDownloaderError> {
+pub async fn request(
+    url: &str,
+    file_name: &str,
+    m_pb: Option<MultiProgress>,
+) -> Result<(), CommonDownloaderError> {
     let path = format!("./{}", file_name);
     let partial_path = format!("{}.partial", &path);
 
-    print!("{}\r", &path.yellow());
-    std::io::stdout().flush()?;
+    if m_pb.is_none() {
+        print!("{}\r", &path.yellow());
+        std::io::stdout().flush()?;
+    }
 
     let mut is_partial = (false, 0_u64);
     let mut file = {
         if fs::exists(&path)? {
-            print!("{}\n", &path.truecolor(145, 145, 145));
+            if let Some(m) = m_pb {
+                let _ = m.println(format!("{}", &path.truecolor(145, 145, 145)));
+            } else {
+                print!("{}\n", &path.truecolor(145, 145, 145));
+            }
 
             return Err(CommonDownloaderError::FileAlreadyExists(path.clone()));
         }
@@ -118,7 +142,7 @@ pub async fn request(url: &str, file_name: &str) -> Result<(), CommonDownloaderE
             {
                 Ok(res) => res,
                 Err(err) => {
-                    reset_terminal(&exit_state);
+                    reset_terminal(&exit_state, &m_pb);
                     drop(file);
                     let _ = fs::remove_file(&partial_path);
                     return Err(err.into());
@@ -128,7 +152,7 @@ pub async fn request(url: &str, file_name: &str) -> Result<(), CommonDownloaderE
             match client.get(url).send().await {
                 Ok(res) => res,
                 Err(err) => {
-                    reset_terminal(&exit_state);
+                    reset_terminal(&exit_state, &m_pb);
                     drop(file);
                     let _ = fs::remove_file(&partial_path);
                     return Err(err.into());
@@ -139,7 +163,7 @@ pub async fn request(url: &str, file_name: &str) -> Result<(), CommonDownloaderE
 
     if is_partial.0 {
         if res.status() != 206 {
-            reset_terminal(&exit_state);
+            reset_terminal(&exit_state, &m_pb);
 
             return Err(CommonDownloaderError::PartialRequestFailed {
                 status_code: res.status(),
@@ -148,7 +172,7 @@ pub async fn request(url: &str, file_name: &str) -> Result<(), CommonDownloaderE
         }
     } else {
         if res.status() != 200 {
-            reset_terminal(&exit_state);
+            reset_terminal(&exit_state, &m_pb);
             drop(file);
             let _ = fs::remove_file(&partial_path);
 
@@ -178,7 +202,13 @@ pub async fn request(url: &str, file_name: &str) -> Result<(), CommonDownloaderE
         }
     }; // ??? idk
 
-    let pb = ProgressBar::new(content_length);
+    let pb = {
+        if let Some(m) = &m_pb {
+            m.add(ProgressBar::new(content_length))
+        } else {
+            ProgressBar::new(content_length)
+        }
+    };
     pb.set_style(
         ProgressStyle::with_template(
             "{prefix} [{elapsed_precise}] [{wide_bar:.green/yellow}] {bytes}/{total_bytes} ({eta})",
@@ -203,7 +233,7 @@ pub async fn request(url: &str, file_name: &str) -> Result<(), CommonDownloaderE
     };
     while let Some(chunk) = match res.chunk().await {
         Err(err) => {
-            reset_terminal(&exit_state);
+            reset_terminal(&exit_state, &m_pb);
 
             return Err(err.into());
         }
@@ -217,7 +247,7 @@ pub async fn request(url: &str, file_name: &str) -> Result<(), CommonDownloaderE
         pb: &pb,
         path: &path,
     };
-    reset_terminal(&exit_state);
+    reset_terminal(&exit_state, &m_pb);
     drop(file);
     fs::rename(partial_path, path)?;
 

@@ -1,5 +1,6 @@
 #![allow(dead_code)]
 
+use indicatif::MultiProgress;
 use log::info;
 use reqwest::StatusCode;
 use reqwest::Url;
@@ -162,8 +163,8 @@ pub enum Slide {
 }
 
 impl Slide {
-    pub async fn download(&self) -> Result<(), CommonDownloaderError> {
-        downloader::x::fetch(self).await
+    pub async fn download(&self, m_pb: Option<MultiProgress>) -> Result<(), CommonDownloaderError> {
+        downloader::x::fetch(self, m_pb).await
     }
 
     pub fn get_file_name(&self) -> String {

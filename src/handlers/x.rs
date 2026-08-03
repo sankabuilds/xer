@@ -28,7 +28,7 @@ pub async fn bookmarks(x_bookmarks_args: &XBookmarksArgs, args: &Cli) -> Result<
 
         DownloaderOptions::new()
             .timeout(Duration::from_millis(x_bookmarks_args.timeout))
-            .download(&slides)
+            .download(slides, Some(x_bookmarks_args.thread_count))
             .await;
     } else {
         anyhow::bail!("Site requires a cookie file. see --help");

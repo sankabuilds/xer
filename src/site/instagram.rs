@@ -1,5 +1,6 @@
 #![allow(dead_code)]
 
+use indicatif::MultiProgress;
 use log::info;
 use reqwest::Url;
 use serde::{Deserialize, Serialize};
@@ -74,8 +75,8 @@ impl Slide {
         }
     }
 
-    pub async fn download(&self) -> Result<(), CommonDownloaderError> {
-        downloader::instagram::fetch(self).await
+    pub async fn download(&self, m_pb: Option<MultiProgress>) -> Result<(), CommonDownloaderError> {
+        downloader::instagram::fetch(self, m_pb).await
     }
 }
 
