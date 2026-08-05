@@ -11,7 +11,7 @@ async fn main() -> Result<()> {
     let slides = Instagram::new(cookie_file)
         .get(ViewType::Bookmarks, None)
         .await
-        .context("faild to get the ViewType")?;
+        .context("failed to get the ViewType")?;
 
     for slide in slides {
         if let Err(err) = slide.download(None).await {
