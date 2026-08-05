@@ -19,7 +19,7 @@ use crate::site::common::Quality;
 
 fn format_msg(msg: Option<&String>) -> String {
     match msg {
-        Some(msg) => format!("{msg}"),
+        Some(msg) => msg.to_owned(),
         None => "Empty".to_string(),
     }
 }
@@ -79,7 +79,7 @@ impl Photo {
             .ok()
             .and_then(|url| {
                 url.path_segments()
-                    .and_then(|segments| segments.last())
+                    .and_then(|mut segments| segments.next_back())
                     .and_then(|filename| filename.rsplit_once('.').map(|(_, ext)| ext.to_string()))
             })
             .unwrap_or_else(|| "bin".to_string());
@@ -111,7 +111,7 @@ impl Video {
             .ok()
             .and_then(|url| {
                 url.path_segments()
-                    .and_then(|segments| segments.last())
+                    .and_then(|mut segments| segments.next_back())
                     .and_then(|filename| filename.rsplit_once('.').map(|(_, ext)| ext.to_string()))
             })
             .unwrap_or_else(|| "bin".to_string());
@@ -237,10 +237,10 @@ impl XTwitter {
         let mut slides_arr: Vec<Slide> = vec![];
 
         loop {
-            if let Limit::Max { slide_count } = limit {
-                if slides_arr.len() >= *slide_count as usize {
-                    break;
-                }
+            if let Limit::Max { slide_count } = limit
+                && slides_arr.len() >= *slide_count as usize
+            {
+                break;
             }
 
             // count 100 is the maximum amount we can request at a single time
@@ -358,7 +358,7 @@ impl XTwitter {
                                         Err(err) => {
                                             return Err(XError::SlideParseFailed {
                                                 value: slide.clone(),
-                                                err: err,
+                                                err,
                                             });
                                         }
                                     }
@@ -374,7 +374,7 @@ impl XTwitter {
                                         Err(err) => {
                                             return Err(XError::SlideParseFailed {
                                                 value: slide.clone(),
-                                                err: err,
+                                                err,
                                             });
                                         }
                                     }
@@ -433,7 +433,7 @@ mod tests {
         VideoInfo {
             aspect_ratio: vec![9, 16],
             duration_millis: 36566,
-            variants: variants,
+            variants,
         }
     }
 

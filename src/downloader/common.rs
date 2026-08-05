@@ -87,10 +87,10 @@ pub async fn request(
     m_pb: Option<MultiProgress>,
 ) -> Result<(), CommonDownloaderError> {
     let path = format!("./{}", file_name);
-    let partial_path = format!("{}.partial", &path);
+    let partial_path = format!("{}.partial", path);
 
     if m_pb.is_none() {
-        print!("{}\r", &path.yellow());
+        print!("{}\r", path.yellow());
         std::io::stdout().flush()?;
     }
 
@@ -98,11 +98,11 @@ pub async fn request(
     let mut file = {
         if fs::exists(&path)? {
             if let Some(m) = m_pb {
-                if let Err(err) = m.println(format!("{}", &path.truecolor(145, 145, 145))) {
+                if let Err(err) = m.println(format!("{}", path.truecolor(145, 145, 145))) {
                     eprintln!("warning: failed to reset terminal: {}", err);
                 }
             } else {
-                print!("{}\n", &path.truecolor(145, 145, 145));
+                println!("{}", path.truecolor(145, 145, 145));
             }
 
             return Err(CommonDownloaderError::FileAlreadyExists(path.clone()));
@@ -120,10 +120,7 @@ pub async fn request(
                     let file_meta = fs::metadata(&partial_path)?;
 
                     is_partial = (true, file_meta.len());
-                    fs::OpenOptions::new()
-                        .write(true)
-                        .append(true)
-                        .open(&partial_path)?
+                    fs::OpenOptions::new().append(true).open(&partial_path)?
                 } else {
                     return Err(err.into());
                 }

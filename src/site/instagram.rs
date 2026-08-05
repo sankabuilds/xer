@@ -101,7 +101,7 @@ impl Photo {
             .ok()
             .and_then(|url| {
                 url.path_segments()
-                    .and_then(|segments| segments.last())
+                    .and_then(|mut segments| segments.next_back())
                     .and_then(|file_name| file_name.rsplit_once("."))
                     .map(|(_, ext)| ext.to_string())
             })
@@ -136,7 +136,7 @@ impl Video {
             .ok()
             .and_then(|url| {
                 url.path_segments()
-                    .and_then(|segments| segments.last())
+                    .and_then(|mut segments| segments.next_back())
                     .and_then(|file_name| file_name.rsplit_once("."))
                     .map(|(_, ext)| ext.to_string())
             })
@@ -196,7 +196,7 @@ enum ProductType {
     Feed,
     /// Ad
     Ad,
-    IGTV,
+    Igtv,
 }
 
 /// ProductType::Clips
@@ -340,7 +340,7 @@ impl Instagram {
                         "carousel_container" => ProductType::CarouselContainer,
                         "feed" => ProductType::Feed,
                         "ad" => ProductType::Ad,
-                        "igtv" => ProductType::IGTV,
+                        "igtv" => ProductType::Igtv,
                         unknown => {
                             return Err(InstagramError::UnknownProductType {
                                 p_type: unknown.to_owned(),
@@ -374,7 +374,7 @@ impl Instagram {
                                 } => {
                                     let photo: Photo = Photo {
                                         parent_pk: Some(p_pk.to_string()),
-                                        pk: pk,
+                                        pk,
                                         url: image_versions2.get(Quality::Best).to_owned(),
                                     };
 
@@ -388,7 +388,7 @@ impl Instagram {
                                 } => {
                                     let video: Video = Video {
                                         parent_pk: Some(p_pk.to_owned()),
-                                        pk: pk,
+                                        pk,
                                         url: video_version_container.get(Quality::Best).to_owned(),
                                     };
 
@@ -406,7 +406,7 @@ impl Instagram {
                     ProductType::Ad => {
                         // TODO
                     }
-                    ProductType::IGTV => {
+                    ProductType::Igtv => {
                         // TODO
                     }
                 }
