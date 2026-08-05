@@ -46,23 +46,23 @@ enum State<'a, 'b> {
     ErrorChunk { pb: &'a ProgressBar, path: &'b str },
 }
 
-fn reset_terminal(status: &State, m_pb: &Option<MultiProgress>) {
+fn reset_terminal(status: &State, m_pb: &Option<MultiProgress>) -> std::io::Result<()> {
     match status {
         State::Nominal { pb, path } => {
             pb.finish_and_clear();
 
             if let Some(m) = m_pb {
-                let _ = m.println(format!("{}", path.green()));
+                m.println(format!("{}", path.green()))?;
             } else {
-                print!("{}\n", path.green());
+                println!("{}", path.green());
                 std::io::stdout().flush().expect("stdout flush failed");
             }
         }
         State::Error { path } => {
             if let Some(m) = m_pb {
-                let _ = m.println(format!("{}", path.red()));
+                m.println(format!("{}", path.red()))?;
             } else {
-                print!("{}\n", path.red());
+                println!("{}", path.red());
                 std::io::stdout().flush().expect("stdout flush failed");
             }
         }
@@ -70,13 +70,15 @@ fn reset_terminal(status: &State, m_pb: &Option<MultiProgress>) {
             pb.finish_and_clear();
 
             if let Some(m) = m_pb {
-                let _ = m.println(format!("{}", path.red()));
+                m.println(format!("{}", path.red()))?;
             } else {
-                print!("{}\n", &path.red());
+                println!("{}", path.red());
                 std::io::stdout().flush().expect("stdout flush failed");
             }
         }
     }
+
+    Ok(())
 }
 
 pub async fn request(
@@ -96,7 +98,9 @@ pub async fn request(
     let mut file = {
         if fs::exists(&path)? {
             if let Some(m) = m_pb {
-                let _ = m.println(format!("{}", &path.truecolor(145, 145, 145)));
+                if let Err(err) = m.println(format!("{}", &path.truecolor(145, 145, 145))) {
+                    eprintln!("warning: failed to reset terminal: {}", err);
+                }
             } else {
                 print!("{}\n", &path.truecolor(145, 145, 145));
             }
@@ -142,7 +146,9 @@ pub async fn request(
             {
                 Ok(res) => res,
                 Err(err) => {
-                    reset_terminal(&exit_state, &m_pb);
+                    if let Err(err) = reset_terminal(&exit_state, &m_pb) {
+                        eprintln!("warning: failed to reset terminal: {}", err);
+                    }
                     drop(file);
                     let _ = fs::remove_file(&partial_path);
                     return Err(err.into());
@@ -152,7 +158,9 @@ pub async fn request(
             match client.get(url).send().await {
                 Ok(res) => res,
                 Err(err) => {
-                    reset_terminal(&exit_state, &m_pb);
+                    if let Err(err) = reset_terminal(&exit_state, &m_pb) {
+                        eprintln!("warning: failed to reset terminal: {}", err);
+                    }
                     drop(file);
                     let _ = fs::remove_file(&partial_path);
                     return Err(err.into());
@@ -163,7 +171,9 @@ pub async fn request(
 
     if is_partial.0 {
         if res.status() != 206 {
-            reset_terminal(&exit_state, &m_pb);
+            if let Err(err) = reset_terminal(&exit_state, &m_pb) {
+                eprintln!("warning: failed to reset terminal: {}", err);
+            }
 
             return Err(CommonDownloaderError::PartialRequestFailed {
                 status_code: res.status(),
@@ -172,7 +182,9 @@ pub async fn request(
         }
     } else {
         if res.status() != 200 {
-            reset_terminal(&exit_state, &m_pb);
+            if let Err(err) = reset_terminal(&exit_state, &m_pb) {
+                eprintln!("warning: failed to reset terminal: {}", err);
+            }
             drop(file);
             let _ = fs::remove_file(&partial_path);
 
@@ -233,7 +245,9 @@ pub async fn request(
     };
     while let Some(chunk) = match res.chunk().await {
         Err(err) => {
-            reset_terminal(&exit_state, &m_pb);
+            if let Err(err) = reset_terminal(&exit_state, &m_pb) {
+                eprintln!("warning: failed to reset terminal: {}", err);
+            }
 
             return Err(err.into());
         }
@@ -247,7 +261,9 @@ pub async fn request(
         pb: &pb,
         path: &path,
     };
-    reset_terminal(&exit_state, &m_pb);
+    if let Err(err) = reset_terminal(&exit_state, &m_pb) {
+        eprintln!("warning: failed to reset terminal: {}", err);
+    }
     drop(file);
     fs::rename(partial_path, path)?;
 

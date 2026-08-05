@@ -82,7 +82,9 @@ impl DownloaderOptions {
 
             if handles.len() == thread_count.unwrap_or(4) as usize {
                 for handle in std::mem::take(&mut handles) {
-                    let _r = handle.await.unwrap();
+                    if let Err(err) = handle.await {
+                        eprintln!("JoinError: Task failed to execute to completion: {}", err);
+                    }
                 }
             }
         }
