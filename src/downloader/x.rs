@@ -55,10 +55,12 @@ impl DownloaderOptions {
     pub async fn download(&self, jobs: Vec<Slide>, thread_count: Option<u8>) -> u64 {
         let failed_job_count = Arc::new(AtomicU64::new(0));
         let m = MultiProgress::new();
+        let tc = thread_count.unwrap_or(4) as usize;
+        let last_job_index = jobs.len() - 1;
 
         let mut handles = vec![];
 
-        for slide in jobs {
+        for (index, slide) in jobs.into_iter().enumerate() {
             let m_clone = m.clone();
             let failed_job_count_clone = Arc::clone(&failed_job_count);
 
@@ -80,7 +82,7 @@ impl DownloaderOptions {
             });
             handles.push(handle);
 
-            if handles.len() == thread_count.unwrap_or(4) as usize {
+            if handles.len() == tc || index == last_job_index {
                 for handle in std::mem::take(&mut handles) {
                     if let Err(err) = handle.await {
                         eprintln!("JoinError: Task failed to execute to completion: {}", err);
