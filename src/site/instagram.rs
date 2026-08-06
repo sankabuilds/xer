@@ -49,11 +49,18 @@ impl From<Clip> for Slide {
 
 impl From<Feed> for Slide {
     fn from(f: Feed) -> Self {
-        Self::Photo(Photo {
-            parent_pk: None,
-            pk: f.pk,
-            url: f.image_versions2.get(Quality::Best).to_owned(),
-        })
+        match f.feed_container {
+            FeedContainer::Photo { image_versions2 } => Self::Photo(Photo {
+                parent_pk: None,
+                pk: f.pk,
+                url: image_versions2.get(Quality::Best).to_owned(),
+            }),
+            FeedContainer::Video(v) => Self::Video(Video {
+                parent_pk: None,
+                pk: f.pk,
+                url: v.get(Quality::Best).to_owned(),
+            }),
+        }
     }
 }
 
@@ -192,7 +199,7 @@ enum ProductType {
     Clips,
     /// Multiple items. Can contain combination of both videos & images
     CarouselContainer,
-    /// A single image
+    /// A single image/video
     Feed,
     /// Ad
     Ad,
@@ -245,7 +252,7 @@ enum CarouselItem {
     },
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug)]
 struct VideoVersionContainer {
     video_versions: Vec<VideoVersion>,
 }
@@ -288,7 +295,15 @@ struct Feed {
     #[serde(skip_deserializing)]
     pk: String,
 
-    image_versions2: CandidateContainer,
+    #[serde(flatten)]
+    feed_container: FeedContainer,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+#[serde(untagged)]
+enum FeedContainer {
+    Video(VideoVersionContainer),
+    Photo { image_versions2: CandidateContainer },
 }
 
 enum Limit {
