@@ -29,6 +29,9 @@ pub enum InstagramError {
 
     #[error("Unknown product type: {p_type}\n\nItem: {item:?}")]
     UnknownProductType { p_type: String, item: Value },
+
+    #[error("No bookmarks available in your Instagram account")]
+    ZeroBookmarks,
 }
 
 #[derive(Debug)]
@@ -447,6 +450,10 @@ impl Instagram {
             } else {
                 break;
             }
+        }
+
+        if slide_list.is_empty() {
+            return Err(InstagramError::ZeroBookmarks);
         }
 
         Ok(slide_list)
