@@ -141,7 +141,7 @@ impl VideoInfo {
             .filter(|i| i.bitrate.is_some())
             .collect();
 
-        v.sort_by(|a, b| a.bitrate.unwrap().cmp(&b.bitrate.unwrap()));
+        v.sort_by_key(|a| a.bitrate.unwrap());
 
         match quality {
             Quality::Best => v[v.len() - 1],
@@ -306,8 +306,7 @@ impl XTwitter {
                 }
 
                 let timeline_cursor: TimelineCursor =
-                    serde_json::from_value(next_cursor.clone())
-                        .or_else(|_| Err(XError::UnexpectedResponseShape { path: path.clone(), msg: "serde_json operation failed. failed to parse the Value into a TimelineCursor".into() }))?;
+                    serde_json::from_value(next_cursor.clone()).map_err(|_| XError::UnexpectedResponseShape { path: path.clone(), msg: "serde_json operation failed. failed to parse the Value into a TimelineCursor".into() })?;
 
                 if timeline_cursor.cursor_type == "Bottom" {
                     cursor = Some(timeline_cursor.value);

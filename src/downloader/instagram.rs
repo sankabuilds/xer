@@ -34,6 +34,12 @@ pub struct DownloaderOptions {
     timeout: Duration,
 }
 
+impl Default for DownloaderOptions {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl DownloaderOptions {
     pub fn new() -> Self {
         Self {

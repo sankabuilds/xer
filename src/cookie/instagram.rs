@@ -18,10 +18,8 @@ pub fn get_jar(cookie_file: &str) -> Jar {
 }
 
 pub fn new_loaded_client(jar: Arc<Jar>) -> Client {
-    let client = reqwest::Client::builder()
+    reqwest::Client::builder()
         .cookie_provider(jar)
         .build()
-        .unwrap();
-
-    client
+        .unwrap()
 }

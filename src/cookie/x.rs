@@ -48,7 +48,7 @@ pub fn get_csrf_token(jar: Arc<Jar>) -> Result<String, XCookieError> {
         if let Some(csrf) = extract_cookie_value(
             cookie_header
                 .to_str()
-                .map_err(|err| XCookieError::HeaderValueConversionFailed(err))?,
+                .map_err(XCookieError::HeaderValueConversionFailed)?,
             "ct0",
         ) {
             Ok(csrf)
@@ -61,12 +61,10 @@ pub fn get_csrf_token(jar: Arc<Jar>) -> Result<String, XCookieError> {
 }
 
 pub fn new_loaded_client(jar: Arc<Jar>) -> Client {
-    let client = reqwest::Client::builder()
+    reqwest::Client::builder()
         .cookie_provider(jar)
         .build()
-        .unwrap();
-
-    client
+        .unwrap()
 }
 
 #[cfg(test)]
