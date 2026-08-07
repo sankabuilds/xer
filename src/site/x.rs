@@ -1,6 +1,7 @@
 #![allow(dead_code)]
 
 use indicatif::MultiProgress;
+use little_exif::exif_tag::ExifTag;
 use log::info;
 use reqwest::StatusCode;
 use reqwest::Url;
@@ -15,7 +16,13 @@ use crate::cookie;
 use crate::cookie::x::XCookieError;
 use crate::downloader;
 use crate::downloader::common::CommonDownloaderError;
+use crate::site::common;
+use crate::site::common::MetadataError;
 use crate::site::common::Quality;
+use crate::site::common::VideoMetadataTag;
+use crate::site::common::WriteMetadata;
+use crate::site::common::w_photo_metadata;
+use crate::site::common::w_video_metadata;
 
 fn format_msg(msg: Option<&String>) -> String {
     match msg {
@@ -55,13 +62,34 @@ pub enum XError {
 }
 
 #[derive(Deserialize, Debug)]
-pub struct Photo {
+struct PhotoDto {
     #[serde(rename = "type")]
+    slide_type: String,
+    media_url_https: String,
+    id_str: String,
+    expanded_url: String,
+}
+
+impl PhotoDto {
+    pub fn into_photo(self, sort_index: &str) -> Photo {
+        Photo {
+            slide_type: self.slide_type,
+            media_url_https: self.media_url_https,
+            id_str: self.id_str,
+            metadata: MetadataContainer {
+                sort_index: sort_index.to_owned(),
+                slide_url: self.expanded_url,
+            },
+        }
+    }
+}
+
+pub struct Photo {
     pub slide_type: String,
     pub media_url_https: String,
     pub id_str: String,
-    #[serde(skip)]
-    pub sort_index: String,
+
+    pub metadata: MetadataContainer,
 }
 
 impl Display for Photo {
@@ -72,7 +100,7 @@ impl Display for Photo {
 
 impl Photo {
     fn get_file_name(&self) -> String {
-        let name = format!("{}_{}", self.sort_index, self.id_str);
+        let name = format!("{}_{}", self.metadata.sort_index, self.id_str);
         let ext = self
             .media_url_https
             .parse::<Url>()
@@ -89,20 +117,47 @@ impl Photo {
 }
 
 #[derive(Deserialize, Debug)]
-pub struct Video {
+struct VideoDto {
     #[serde(rename = "type")]
+    slide_type: String,
+    media_url_https: String,
+    id_str: String,
+    expanded_url: String,
+    video_info: VideoInfo,
+}
+
+impl VideoDto {
+    pub fn into_video(self, sort_index: &str) -> Video {
+        Video {
+            slide_type: self.slide_type,
+            media_url_https: self.media_url_https,
+            id_str: self.id_str,
+            video_info: self.video_info,
+            metadata: MetadataContainer {
+                sort_index: sort_index.to_owned(),
+                slide_url: self.expanded_url,
+            },
+        }
+    }
+}
+
+pub struct Video {
     pub slide_type: String,
     pub media_url_https: String,
     pub id_str: String,
-    #[serde(skip)]
-    pub sort_index: String,
-
     pub video_info: VideoInfo,
+
+    pub metadata: MetadataContainer,
+}
+
+pub struct MetadataContainer {
+    pub sort_index: String,
+    pub slide_url: String,
 }
 
 impl Video {
     fn get_file_name(&self) -> String {
-        let name = format!("{}_{}", self.sort_index, self.id_str);
+        let name = format!("{}_{}", self.metadata.sort_index, self.id_str);
         let ext = self
             .video_info
             .get(Quality::Best)
@@ -157,10 +212,7 @@ pub struct Variant {
     pub url: String,
 }
 
-pub enum Slide {
-    Photo(Photo),
-    Video(Video),
-}
+pub type Slide = common::Slide<Photo, Video>;
 
 impl Slide {
     pub async fn download(&self, m_pb: Option<MultiProgress>) -> Result<(), CommonDownloaderError> {
@@ -181,6 +233,23 @@ impl Display for Slide {
             Self::Photo(p) => write!(f, "{}", p),
 
             Self::Video(v) => write!(f, "{}", v),
+        }
+    }
+}
+
+impl WriteMetadata for Slide {
+    fn write_metadata<P: AsRef<std::path::Path>>(&self, file_path: P) -> Result<(), MetadataError> {
+        match self {
+            Self::Photo(p) => {
+                let tags = vec![ExifTag::Artist(p.metadata.slide_url.clone())];
+
+                w_photo_metadata(file_path.as_ref(), tags)
+            }
+            Self::Video(v) => {
+                let tags = vec![VideoMetadataTag::Artist(&v.metadata.slide_url)];
+
+                w_video_metadata(file_path.as_ref(), tags)
+            }
         }
     }
 }
@@ -351,7 +420,7 @@ impl XTwitter {
 
                         match slide_type {
                             SlideType::Photo => {
-                                let mut photo: Photo = {
+                                let dto: PhotoDto = {
                                     match serde_json::from_value(slide.clone()) {
                                         Ok(k) => k,
                                         Err(err) => {
@@ -363,11 +432,12 @@ impl XTwitter {
                                     }
                                 };
 
-                                photo.sort_index = sort_index.to_owned();
+                                let photo = dto.into_photo(sort_index);
+
                                 slides_arr.push(Slide::Photo(photo));
                             }
                             SlideType::Video => {
-                                let mut video: Video = {
+                                let dto: VideoDto = {
                                     match serde_json::from_value(slide.clone()) {
                                         Ok(k) => k,
                                         Err(err) => {
@@ -379,7 +449,8 @@ impl XTwitter {
                                     }
                                 };
 
-                                video.sort_index = sort_index.to_owned();
+                                let video = dto.into_video(sort_index);
+
                                 slides_arr.push(Slide::Video(video));
                             }
                             SlideType::Unknown => {
