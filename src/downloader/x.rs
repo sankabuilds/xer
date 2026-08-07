@@ -7,7 +7,7 @@ use thiserror::Error;
 use tokio::spawn;
 
 use crate::downloader::common::{CommonDownloaderError, request};
-use crate::site::common::Quality;
+use crate::site::common::{Quality, WriteMetadata};
 use crate::site::x::Slide;
 
 #[derive(Error, Debug)]
@@ -72,18 +72,22 @@ impl DownloaderOptions {
 
             let handle = spawn(async move {
                 let m = m_clone.clone();
+                let file_name = slide.get_file_name();
 
                 if let Err(err) = slide.download(Some(m_clone)).await {
                     if matches!(err, CommonDownloaderError::FileAlreadyExists(_)) {
                     } else {
-                        let _ = m.println(format!(
-                            "failed to download: {} -> {}",
-                            slide.get_file_name(),
-                            err
-                        ));
+                        let _ = m.println(format!("failed to download: {} -> {}", file_name, err));
 
                         failed_job_count_clone.fetch_add(1, Relaxed);
                     }
+                }
+
+                if let Err(err) = slide.write_metadata(&file_name) {
+                    let _ = m.println(format!(
+                        "failed to write metadata for the file: {} -> {}",
+                        file_name, err
+                    ));
                 }
             });
             handles.push(handle);

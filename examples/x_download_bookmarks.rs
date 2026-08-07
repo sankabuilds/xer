@@ -1,7 +1,10 @@
 use anyhow::{Context, Result};
 use xxer::{
     downloader::common::CommonDownloaderError,
-    site::x::{ViewType, XTwitter},
+    site::{
+        common::WriteMetadata,
+        x::{ViewType, XTwitter},
+    },
 };
 
 #[tokio::main]
@@ -15,12 +18,20 @@ async fn main() -> Result<()> {
         .context("failed to get the ViewType")?;
 
     for slide in slides {
+        let file_name = slide.get_file_name();
         if let Err(err) = slide.download(None).await {
             if matches!(err, CommonDownloaderError::FileAlreadyExists(_)) {
                 continue;
             }
 
             return Err(err.into());
+        }
+
+        if let Err(err) = slide.write_metadata(&file_name) {
+            eprintln!(
+                "failed to write metadata for the file: {} -> {}",
+                file_name, err
+            );
         }
     }
 
