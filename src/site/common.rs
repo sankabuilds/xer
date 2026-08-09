@@ -1,8 +1,11 @@
 use std::{fmt::Display, path::Path};
 
+use const_format::formatcp;
 use little_exif::{exif_tag::ExifTag, metadata::Metadata};
 use mp4ameta::{Data, FreeformIdent};
 use thiserror::Error;
+
+use crate::XER_VERSION;
 
 pub trait Site {
     type ViewType;
@@ -69,7 +72,10 @@ impl Display for ImageDescription<'_> {
 pub fn w_photo_metadata(img_path: &Path, desc: ImageDescription) -> Result<(), MetadataError> {
     let mut metadata = Metadata::new();
 
-    metadata.set_tag(ExifTag::ImageDescription(format!("{}", desc)));
+    metadata.set_tag(ExifTag::ImageDescription(format!(
+        "{} XER VERSION: {}",
+        desc, XER_VERSION_FORMATTED
+    )));
 
     metadata.write_to_file(img_path)?;
 
@@ -82,6 +88,8 @@ const MEAN: &str = "com.github.sankabuilds.xer";
 const POST_URL_IDENT: StaticFreeFormIndent = FreeformIdent::new_static(MEAN, "Post URL");
 const AUTHOR_IDENT: StaticFreeFormIndent = FreeformIdent::new_static(MEAN, "Author");
 const TAGS_IDENT: StaticFreeFormIndent = FreeformIdent::new_static(MEAN, "Tags");
+const XER_IDENT: StaticFreeFormIndent = FreeformIdent::new_static(MEAN, "Xer Version");
+const XER_VERSION_FORMATTED: &str = formatcp!("v{} - (github.com/sankabuilds/xer)", XER_VERSION);
 
 pub enum VideoMetadataTag<'a> {
     /// Try to follow this format: `<Name> (<handle>): Elon Musk (elonmusk)`
@@ -113,6 +121,8 @@ pub fn w_video_metadata(vid_path: &Path, tags: Vec<VideoMetadataTag>) -> Result<
             }
         }
     }
+
+    video_tags.add_data(XER_IDENT, Data::Utf8(XER_VERSION_FORMATTED.to_owned()));
 
     video_tags.write_to_path(vid_path)?;
 
