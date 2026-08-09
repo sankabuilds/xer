@@ -1,7 +1,6 @@
 #![allow(dead_code)]
 
 use indicatif::MultiProgress;
-use little_exif::exif_tag::ExifTag;
 use log::info;
 use reqwest::StatusCode;
 use reqwest::Url;
@@ -17,6 +16,7 @@ use crate::cookie::x::XCookieError;
 use crate::downloader;
 use crate::downloader::common::CommonDownloaderError;
 use crate::site::common;
+use crate::site::common::ImageDescription;
 use crate::site::common::MetadataError;
 use crate::site::common::Quality;
 use crate::site::common::VideoMetadataTag;
@@ -59,6 +59,9 @@ pub enum XError {
 
     #[error("Http request preparation failed: {0}")]
     CookieError(#[from] XCookieError),
+
+    #[error("Failed to extract meta data from the Value: {0}")]
+    MetadataParsingError(Value),
 }
 
 #[derive(Deserialize, Debug)]
@@ -71,7 +74,7 @@ struct PhotoDto {
 }
 
 impl PhotoDto {
-    pub fn into_photo(self, sort_index: &str) -> Photo {
+    pub fn into_photo(self, sort_index: &str, author: &str, author_screen_name: &str) -> Photo {
         Photo {
             slide_type: self.slide_type,
             media_url_https: self.media_url_https,
@@ -79,6 +82,8 @@ impl PhotoDto {
             metadata: MetadataContainer {
                 sort_index: sort_index.to_owned(),
                 slide_url: self.expanded_url,
+                author: author.to_owned(),
+                author_screen_name: author_screen_name.to_owned(),
             },
         }
     }
@@ -127,7 +132,7 @@ struct VideoDto {
 }
 
 impl VideoDto {
-    pub fn into_video(self, sort_index: &str) -> Video {
+    pub fn into_video(self, sort_index: &str, author: &str, author_screen_name: &str) -> Video {
         Video {
             slide_type: self.slide_type,
             media_url_https: self.media_url_https,
@@ -136,6 +141,8 @@ impl VideoDto {
             metadata: MetadataContainer {
                 sort_index: sort_index.to_owned(),
                 slide_url: self.expanded_url,
+                author: author.to_owned(),
+                author_screen_name: author_screen_name.to_owned(),
             },
         }
     }
@@ -153,6 +160,8 @@ pub struct Video {
 pub struct MetadataContainer {
     pub sort_index: String,
     pub slide_url: String,
+    pub author: String,
+    pub author_screen_name: String,
 }
 
 impl Video {
@@ -241,12 +250,24 @@ impl WriteMetadata for Slide {
     fn write_metadata<P: AsRef<std::path::Path>>(&self, file_path: P) -> Result<(), MetadataError> {
         match self {
             Self::Photo(p) => {
-                let tags = vec![ExifTag::Artist(p.metadata.slide_url.clone())];
+                let author = format!("{} ({})", p.metadata.author, p.metadata.author_screen_name);
 
-                w_photo_metadata(file_path.as_ref(), tags)
+                w_photo_metadata(
+                    file_path.as_ref(),
+                    ImageDescription {
+                        author: &author,
+                        post_url: &p.metadata.slide_url,
+                        tags: None,
+                    },
+                )
             }
             Self::Video(v) => {
-                let tags = vec![VideoMetadataTag::Artist(&v.metadata.slide_url)];
+                let author = format!("{} ({})", v.metadata.author, v.metadata.author_screen_name);
+
+                let tags = vec![
+                    VideoMetadataTag::PostUrl(&v.metadata.slide_url),
+                    VideoMetadataTag::Author(&author),
+                ];
 
                 w_video_metadata(file_path.as_ref(), tags)
             }
@@ -398,6 +419,22 @@ impl XTwitter {
                 }
 
                 if let Some(arr) = slides.as_array() {
+                    let mut core = &entry["content"]["itemContent"]["tweet_results"]["result"]["core"]
+                        ["user_results"]["result"]["core"];
+
+                    if !core.is_object() {
+                        core = &entry["content"]["itemContent"]["tweet_results"]["result"]["tweet"]
+                            ["core"]["user_results"]["result"]["core"];
+                    }
+
+                    let author = core["name"]
+                        .as_str()
+                        .ok_or_else(|| XError::MetadataParsingError(entry.clone()))?;
+
+                    let author_username = core["screen_name"]
+                        .as_str()
+                        .ok_or_else(|| XError::MetadataParsingError(entry.clone()))?;
+
                     for slide in arr {
                         let slide_type = {
                             if let Some(t) = slide["type"].as_str() {
@@ -432,7 +469,7 @@ impl XTwitter {
                                     }
                                 };
 
-                                let photo = dto.into_photo(sort_index);
+                                let photo = dto.into_photo(sort_index, author, author_username);
 
                                 slides_arr.push(Slide::Photo(photo));
                             }
@@ -449,7 +486,7 @@ impl XTwitter {
                                     }
                                 };
 
-                                let video = dto.into_video(sort_index);
+                                let video = dto.into_video(sort_index, author, author_username);
 
                                 slides_arr.push(Slide::Video(video));
                             }
