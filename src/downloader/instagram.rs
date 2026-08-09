@@ -6,6 +6,7 @@ use std::{
 };
 use tokio::spawn;
 
+use crate::site::common::WriteMetadata;
 use crate::{
     downloader::common::{CommonDownloaderError, request},
     site::instagram::Slide,
@@ -81,6 +82,15 @@ impl DownloaderOptions {
 
                         failed_job_count_clone.fetch_add(1, Relaxed);
                     }
+                }
+
+                let file_name = slide.get_file_name();
+
+                if let Err(err) = slide.write_metadata(&file_name) {
+                    let _ = m.println(format!(
+                        "failed to write metadata for the file: {} -> {}",
+                        file_name, err
+                    ));
                 }
             });
             handles.push(handle);
