@@ -11,7 +11,10 @@ use thiserror::Error;
 use crate::{
     cookie::instagram::{get_jar, new_loaded_client},
     downloader::{self, common::CommonDownloaderError},
-    site::common::{Quality, Site},
+    site::common::{
+        self, ImageDescription, Quality, Site, VideoMetadataTag, WriteMetadata, w_photo_metadata,
+        w_video_metadata,
+    },
 };
 
 pub const INSTAGRAM: &str = "https://www.instagram.com";
@@ -34,11 +37,7 @@ pub enum InstagramError {
     ZeroBookmarks,
 }
 
-#[derive(Debug)]
-pub enum Slide {
-    Photo(Photo),
-    Video(Video),
-}
+pub type Slide = common::Slide<Photo, Video>;
 
 impl From<Clip> for Slide {
     fn from(c: Clip) -> Self {
@@ -46,6 +45,12 @@ impl From<Clip> for Slide {
             parent_pk: None,
             pk: c.pk.clone(),
             url: c.video_version_container.get(Quality::Best).to_owned(),
+            metadata: MetadataContainer {
+                author_id: c.owner.id,
+                author_username: c.owner.username,
+                author_full_name: c.owner.full_name,
+                post_url: format!("{}/p/{}", INSTAGRAM, c.code),
+            },
         })
     }
 }
@@ -57,11 +62,25 @@ impl From<Feed> for Slide {
                 parent_pk: None,
                 pk: f.pk,
                 url: image_versions2.get(Quality::Best).to_owned(),
+
+                metadata: MetadataContainer {
+                    author_id: f.owner.id,
+                    author_username: f.owner.username,
+                    author_full_name: f.owner.full_name,
+                    post_url: format!("{}/p/{}", INSTAGRAM, f.code),
+                },
             }),
             FeedContainer::Video(v) => Self::Video(Video {
                 parent_pk: None,
                 pk: f.pk,
                 url: v.get(Quality::Best).to_owned(),
+
+                metadata: MetadataContainer {
+                    author_id: f.owner.id,
+                    author_username: f.owner.username,
+                    author_full_name: f.owner.full_name,
+                    post_url: format!("{}/p/{}", INSTAGRAM, f.code),
+                },
             }),
         }
     }
@@ -73,6 +92,49 @@ impl Display for Slide {
             Self::Photo(p) => write!(f, "{}", p),
 
             Self::Video(v) => write!(f, "{}", v),
+        }
+    }
+}
+
+impl WriteMetadata for Slide {
+    fn write_metadata<P: AsRef<std::path::Path>>(
+        &self,
+        file_path: P,
+    ) -> Result<(), common::MetadataError> {
+        match self {
+            Self::Photo(p) => {
+                let author = &format!(
+                    "{} ({} - {})",
+                    p.metadata.author_full_name, p.metadata.author_username, p.metadata.author_id,
+                );
+
+                let post_url = &p.metadata.post_url;
+
+                w_photo_metadata(
+                    file_path.as_ref(),
+                    ImageDescription {
+                        author,
+                        post_url,
+                        // TODO
+                        tags: None,
+                    },
+                )
+            }
+            Self::Video(v) => {
+                let author = &format!(
+                    "{} ({} - {})",
+                    v.metadata.author_full_name, v.metadata.author_username, v.metadata.author_id,
+                );
+
+                let post_url = &v.metadata.post_url;
+
+                let tags = vec![
+                    VideoMetadataTag::Author(author),
+                    VideoMetadataTag::PostUrl(post_url),
+                ];
+
+                w_video_metadata(file_path.as_ref(), tags)
+            }
         }
     }
 }
@@ -91,10 +153,21 @@ impl Slide {
 }
 
 #[derive(Debug)]
+pub struct MetadataContainer {
+    /// The `author_id` is more useful than the `author_username`, because the user cannot change it.
+    pub author_id: String,
+    pub author_username: String,
+    pub author_full_name: String,
+    pub post_url: String,
+}
+
+#[derive(Debug)]
 pub struct Photo {
     pub parent_pk: Option<String>,
     pub pk: String,
     pub url: String,
+
+    pub metadata: MetadataContainer,
 }
 
 impl Display for Photo {
@@ -130,6 +203,8 @@ pub struct Video {
     pub parent_pk: Option<String>,
     pub pk: String,
     pub url: String,
+
+    pub metadata: MetadataContainer,
 }
 
 impl Display for Video {
@@ -216,8 +291,17 @@ struct Clip {
     pk: String,
 
     code: String,
+    owner: Owner,
+
     #[serde(flatten)]
     video_version_container: VideoVersionContainer,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+struct Owner {
+    id: String,
+    full_name: String,
+    username: String,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -234,6 +318,7 @@ struct VideoVersion {
 #[derive(Serialize, Deserialize)]
 struct CarouselContainer {
     code: String,
+    owner: Owner,
     carousel_media: Vec<CarouselItem>,
 }
 
@@ -300,6 +385,9 @@ struct Feed {
 
     #[serde(flatten)]
     feed_container: FeedContainer,
+
+    code: String,
+    owner: Owner,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -382,7 +470,7 @@ impl Instagram {
                         let carousel_media =
                             serde_json::from_value::<CarouselContainer>(item["media"].clone())?;
 
-                        for carousel_item in carousel_media.carousel_media {
+                        for carousel_item in &carousel_media.carousel_media {
                             match carousel_item {
                                 CarouselItem::Image {
                                     product_type: _,
@@ -392,8 +480,21 @@ impl Instagram {
                                 } => {
                                     let photo: Photo = Photo {
                                         parent_pk: Some(p_pk.to_string()),
-                                        pk,
+                                        pk: pk.to_owned(),
                                         url: image_versions2.get(Quality::Best).to_owned(),
+
+                                        metadata: MetadataContainer {
+                                            author_id: carousel_media.owner.id.clone(),
+                                            author_username: carousel_media.owner.username.clone(),
+                                            author_full_name: carousel_media
+                                                .owner
+                                                .full_name
+                                                .clone(),
+                                            post_url: format!(
+                                                "{}/p/{}",
+                                                INSTAGRAM, carousel_media.code
+                                            ),
+                                        },
                                     };
 
                                     slide_list.push(Slide::Photo(photo));
@@ -406,8 +507,21 @@ impl Instagram {
                                 } => {
                                     let video: Video = Video {
                                         parent_pk: Some(p_pk.to_owned()),
-                                        pk,
+                                        pk: pk.to_owned(),
                                         url: video_version_container.get(Quality::Best).to_owned(),
+
+                                        metadata: MetadataContainer {
+                                            author_id: carousel_media.owner.id.clone(),
+                                            author_username: carousel_media.owner.username.clone(),
+                                            author_full_name: carousel_media
+                                                .owner
+                                                .full_name
+                                                .clone(),
+                                            post_url: format!(
+                                                "{}/p/{}",
+                                                INSTAGRAM, carousel_media.code
+                                            ),
+                                        },
                                     };
 
                                     slide_list.push(Slide::Video(video));
@@ -472,6 +586,12 @@ mod tests {
             url: String::from(
                 "https://instagram.fcmb3-2.fna.fbcdn.net/o1/v/t2/f2/m86/AQPXRRddBe2JJvoH1tkqbcCbClRrUAvH_fu0ZNeuhMWzDILYM-9hUvy9HU19g044dFtQs.mp4?_nc_cat=1039&_nc_oc=AddobZtPa56R2FE4vbiRQ9ItVVq8T4rwVQ5CgLdXN15NBdxBWH91DnresolFYniKMdjQ&_nc_sid=5e9851&_nc_ht=instagram.fcmb3-2.fna.fbcdn.net&_nc_ohc=MEb55SECVPIQ7kNvwHtinuz&efg=eyJ2ZW5jb2RlX3RhZyI6Inhwdl9wcm9ncmVzc2l2ZS5JTlNUQUdSQU0uQ0xJUFMuQzIuNzIwLmRhc2hfYmFzZWxpbmVfMV92MSIsInhwdl9hc3NldF9pZCI6MTA1dfgMzkxNzYyMfferfgdfgDUwMDM2MywiYXNzZXRfYWdlX2RheXMiOjMsInZpX3VzZWNhc2VfaWQiOjEwMDk5LCJkdXJhdGlvbl9zIjo2NywidXJsZ2VuX3NvdXJjZSI6Ind3dyJ9&ccb=17-1&vs=6791aerer04de3620e3f&_nc_vs=HBksddFQIYUmertlnX3hwdl9yZWVsc19wZXJtYW5lbnRfc3JfcHJvZC9DMTQzRDRBNzQ5RUI1OTcxNkI5RjVGMkFBRjhFRUZBMV92aWRlb19kYXNoaW5pdC5tcDQVAALIARIAFQIYUWlnX3hwdl9wbGFjZW1lbnRfcGVybWFuZW50X3YyL0ZDNEMzOTY1Q0JGNTEyOEQ3MEZBNEIyMDcyMTY4NkJBX2F1ZGlvX2Rhc2hpbml0Lm1wNBUCAsgBEgAoABgwerweAGwKIB3VzZV9vaWwBMRJwcm9ncmVzc2l2ZV9yZWNpcGUBMRUAACaW3qOWiqLfAxUCKAJDMiwXQFDgAAAAAAAYEmRhc2hfYmFzZWxpbmVfMV92MREAdf4HZeadAQA&_nc_gid=3_iO4Il340bLyzPHoQCQgQ&_nc_ss=7a22e&_nc_map=urlgen_bucketless&_nc_zt=28&oh=00_AQD-bRxC-th9QoaOTtrtert1f2EU_5WWC9V5fYudd5xtgAh5BetaGA&oe=6A6Aert5ECE",
             ),
+            metadata: crate::site::instagram::MetadataContainer {
+                author_id: "346346346346".to_owned(),
+                author_username: "sankabuilds".to_owned(),
+                author_full_name: "Madhusanka S.".to_owned(),
+                post_url: "www.instagram.com/p/Hnxjnfgndjf".to_owned(),
+            },
         };
 
         assert_eq!(photo.get_file_name(), "3938716240889371107.mp4");
