@@ -104,7 +104,7 @@ impl WriteMetadata for Slide {
         match self {
             Self::Photo(p) => {
                 let author = &format!(
-                    "{} ({} - {})",
+                    "{} (@{} - {})",
                     p.metadata.author_full_name, p.metadata.author_username, p.metadata.author_id,
                 );
 
@@ -122,7 +122,7 @@ impl WriteMetadata for Slide {
             }
             Self::Video(v) => {
                 let author = &format!(
-                    "{} ({} - {})",
+                    "{} (@{} - {})",
                     v.metadata.author_full_name, v.metadata.author_username, v.metadata.author_id,
                 );
 
