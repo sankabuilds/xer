@@ -250,7 +250,7 @@ impl WriteMetadata for Slide {
     fn write_metadata<P: AsRef<std::path::Path>>(&self, file_path: P) -> Result<(), MetadataError> {
         match self {
             Self::Photo(p) => {
-                let author = format!("{} ({})", p.metadata.author, p.metadata.author_screen_name);
+                let author = format!("{} (@{})", p.metadata.author, p.metadata.author_screen_name);
 
                 w_photo_metadata(
                     file_path.as_ref(),
@@ -262,7 +262,7 @@ impl WriteMetadata for Slide {
                 )
             }
             Self::Video(v) => {
-                let author = format!("{} ({})", v.metadata.author, v.metadata.author_screen_name);
+                let author = format!("{} (@{})", v.metadata.author, v.metadata.author_screen_name);
 
                 let tags = vec![
                     VideoMetadataTag::PostUrl(&v.metadata.slide_url),
