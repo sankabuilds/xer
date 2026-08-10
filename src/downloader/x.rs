@@ -76,10 +76,12 @@ impl DownloaderOptions {
 
                 if let Err(err) = slide.download(Some(m_clone)).await {
                     if matches!(err, CommonDownloaderError::FileAlreadyExists(_)) {
+                        return;
                     } else {
                         let _ = m.println(format!("failed to download: {} -> {}", file_name, err));
 
                         failed_job_count_clone.fetch_add(1, Relaxed);
+                        return;
                     }
                 }
 
