@@ -1,6 +1,6 @@
 [package]
 name = "xxer"
-version = "0.4.0"
+version = "0.4.1"
 edition = "2024"
 description = "Xer - Download social media bookmarks"
 keywords = ["cli", "x", "twitter", "downloader", "instagram"]
@@ -26,5 +26,4 @@ reqwest = { version = "0.13", features = ["json", "cookies", "query"] }
 serde = {version = "1.0.228", features = ["serde_derive"]}
 serde_json = "1.0.150"
 thiserror = "2.0.18"
-tokio = { version = "1", features = ["full"] }
-
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
