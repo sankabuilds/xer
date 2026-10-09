@@ -10,7 +10,9 @@ use thiserror::Error;
 use crate::{
     cookie::reddit::{get_jar, new_loaded_client},
     downloader::{self, common::CommonDownloaderError},
-    site::common::{self, VideoMetadataTag, WriteMetadata, w_photo_metadata, w_video_metadata},
+    site::common::{
+        self, Site, VideoMetadataTag, WriteMetadata, w_photo_metadata, w_video_metadata,
+    },
 };
 
 pub const REDDIT: &str = "https://www.reddit.com";
@@ -219,8 +221,12 @@ enum PostType {
     Video,
 }
 
-impl Reddit {
-    pub fn new(cookie_file: &str) -> Self {
+impl Site for Reddit {
+    type Error = RedditError;
+    type Slide = Slide;
+    type ViewType = ViewType;
+
+    fn new(cookie_file: &str) -> Self {
         let jar = Arc::new(get_jar(cookie_file));
 
         Self {
@@ -228,19 +234,16 @@ impl Reddit {
         }
     }
 
-    pub async fn get(
-        &self,
-        t: ViewType,
-        _limit: Option<u32>,
-        username: &str,
-    ) -> Result<Vec<Slide>, RedditError> {
+    async fn get(&self, t: ViewType, _limit: Option<u32>) -> Result<Vec<Slide>, RedditError> {
         match t {
-            ViewType::Bookmarks => self.get_bookmarks(username).await,
+            ViewType::Bookmarks => self.get_bookmarks().await,
         }
     }
+}
 
-    async fn get_bookmarks(&self, username: &str) -> Result<Vec<Slide>, RedditError> {
-        let url = format!("{}/user/{}/saved/", REDDIT, username);
+impl Reddit {
+    async fn get_bookmarks(&self) -> Result<Vec<Slide>, RedditError> {
+        let url = format!("{}/user/me/saved/", REDDIT);
 
         let req = self.client.get(url).header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36");
 
