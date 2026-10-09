@@ -31,7 +31,7 @@ pub enum CommonDownloaderError {
         response_body: String,
     },
 
-    #[error("Failed to download the slide. A file with same name already exists: {0}")]
+    #[error("Failed to download the slide. A file with the same name already exists: {0}")]
     FileAlreadyExists(String),
 
     #[error("failed to set up the progress bar: {0}")]
