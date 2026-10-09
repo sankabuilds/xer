@@ -252,7 +252,7 @@ impl Reddit {
             if let Some(limit) = limit
                 && slides.len() > limit as usize
             {
-                info!(limit = limit, "Stoping navigation. Limit reached.");
+                info!(limit = limit, "Stopping navigation. Limit reached.");
                 break;
             }
 
