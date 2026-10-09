@@ -1,12 +1,12 @@
 #![allow(dead_code)]
 
 use indicatif::MultiProgress;
-use log::info;
 use reqwest::Url;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::{fmt::Display, str::FromStr, sync::Arc};
 use thiserror::Error;
+use tracing::info;
 
 use crate::{
     cookie::instagram::{get_jar, new_loaded_client},

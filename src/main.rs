@@ -11,8 +11,8 @@ async fn main() -> Result<()> {
     let args = &Cli::parse();
 
     if args.verbose {
-        env_logger::builder()
-            .filter_level(log::LevelFilter::Info)
+        tracing_subscriber::fmt()
+            .with_env_filter("xer=info,xxer=info")
             .init();
     }
 

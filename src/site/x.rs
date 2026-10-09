@@ -1,7 +1,6 @@
 #![allow(dead_code)]
 
 use indicatif::MultiProgress;
-use log::info;
 use reqwest::StatusCode;
 use reqwest::Url;
 use reqwest::cookie::Jar;
@@ -10,6 +9,7 @@ use serde_json::Value;
 use std::fmt::Display;
 use std::sync::Arc;
 use thiserror::Error;
+use tracing::info;
 
 use crate::cookie;
 use crate::cookie::x::XCookieError;
