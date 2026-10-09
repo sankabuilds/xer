@@ -305,6 +305,7 @@ async fn fetch_file(
     Ok(())
 }
 
+/// Written specifically for reddit. May need adjustments to make this more generic
 #[instrument]
 pub async fn request_hls(
     playlist_url: &str,
