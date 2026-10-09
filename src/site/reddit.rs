@@ -3,9 +3,10 @@
 use chrono::{DateTime, FixedOffset};
 use indicatif::MultiProgress;
 use reqwest::{StatusCode, Url};
-use scraper::{Html, Selector};
+use scraper::{ElementRef, Html, Selector};
 use std::{fmt::Display, sync::Arc};
 use thiserror::Error;
+use tracing::{debug, info};
 
 use crate::{
     cookie::reddit::{get_jar, new_loaded_client},
@@ -210,8 +211,9 @@ pub enum ViewType {
     Bookmarks,
 }
 
+#[derive(Debug)]
 pub struct Reddit {
-    client: reqwest::Client,
+    pub client: reqwest::Client,
 }
 
 enum PostType {
@@ -234,196 +236,222 @@ impl Site for Reddit {
         }
     }
 
-    async fn get(&self, t: ViewType, _limit: Option<u32>) -> Result<Vec<Slide>, RedditError> {
+    async fn get(&self, t: ViewType, limit: Option<u32>) -> Result<Vec<Slide>, RedditError> {
         match t {
-            ViewType::Bookmarks => self.get_bookmarks().await,
+            ViewType::Bookmarks => self.get_bookmarks(limit).await,
         }
     }
 }
 
 impl Reddit {
-    async fn get_bookmarks(&self) -> Result<Vec<Slide>, RedditError> {
-        let url = format!("{}/user/me/saved/", REDDIT);
-
-        let req = self.client.get(url).header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36");
-
-        let res = req.send().await?;
-
-        if res.status() != StatusCode::OK {
-            panic!("request failed! status: {}", res.status());
-        }
-
-        let body = res.text().await?;
-
-        let posts_selector = Selector::parse("shreddit-post").unwrap();
-
-        // fs::write("saved.html", &body).await?;
-        // info!("response body has been written to the file: saved.html");
-        let doc = Html::parse_document(&body);
-        let element = doc
-            .select(&Selector::parse("shreddit-feed").map_err(|_| {
-                RedditError::UnexpectedDocumentStructure {
-                    expect: "shreddit-feed".to_string(),
-                    document: doc.html(),
-                }
-            })?)
-            .next_back()
-            .unwrap();
-
-        let mut posts = Vec::new();
-
-        for child in element.select(&posts_selector) {
-            posts.push(child);
-        }
-
+    async fn get_bookmarks(&self, limit: Option<u32>) -> Result<Vec<Slide>, RedditError> {
         let mut slides = Vec::new();
-        let img_selector = Selector::parse("zoomable-img > img").unwrap();
-        for p in posts {
-            let Some(domain) = p.attr("domain").map(PostDomain::from) else {
-                continue;
-            };
-            let author =
-                p.attr("author")
-                    .ok_or_else(|| RedditError::UnexpectedDocumentStructure {
-                        expect: "author".to_string(),
-                        document: p.html(),
-                    })?;
+        let mut url: Option<String> = Some(format!("{}/user/me/saved/", REDDIT));
 
-            let author_id = {
-                if author == "[deleted]" {
-                    "Deleted"
-                } else {
-                    p.attr("author-id")
-                        .ok_or_else(|| RedditError::UnexpectedDocumentStructure {
-                            expect: "author-id".to_string(),
-                            document: p.html(),
-                        })?
-                }
-            };
+        while let Some(d_url) = url {
+            if let Some(limit) = limit
+                && slides.len() > limit as usize
+            {
+                info!(limit = limit, "Stoping navigation. Limit reached.");
+                break;
+            }
 
-            let permalink =
-                p.attr("permalink")
-                    .ok_or_else(|| RedditError::UnexpectedDocumentStructure {
-                        expect: "permalink".to_string(),
-                        document: p.html(),
-                    })?;
+            info!(url = d_url, "Requesting page");
 
-            let timestamp = p.attr("created-timestamp").ok_or_else(|| {
-                RedditError::UnexpectedDocumentStructure {
-                    expect: "created-timestamp".to_string(),
-                    document: p.html(),
-                }
-            })?;
-            let format = "%Y-%m-%dT%H:%M:%S%.6f%z";
+            let req = self.client.get(d_url).header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36");
 
-            match domain {
-                PostDomain::Redgifs => {
-                    if let Some(url) = p.attr("content-href") {
-                        let slide = Slide::Video(Video {
-                            url: url.to_owned(),
-                            site: PostDomain::Redgifs,
-                            created_timestamp: DateTime::parse_from_str(timestamp, format)?,
-                            author: author.to_owned(),
-                            author_id: author_id.to_owned(),
-                            permalink: permalink.to_owned(),
-                        });
+            let res = req.send().await?;
 
-                        slides.push(slide);
-                    }
-                }
-                PostDomain::IRedgifs => {
-                    let el = p.select(&img_selector).last().unwrap();
+            if res.status() != StatusCode::OK {
+                panic!("request failed! status: {}", res.status());
+            }
 
-                    if let Some(url) = el.attr("src") {
-                        let slide = Slide::Photo(Photo {
-                            url: url.to_owned(),
-                            site: PostDomain::IRedgifs,
-                            created_timestamp: DateTime::parse_from_str(timestamp, format)?,
-                            author: author.to_owned(),
-                            author_id: author_id.to_owned(),
-                            permalink: permalink.to_owned(),
-                        });
+            let body = res.text().await?;
 
-                        slides.push(slide);
-                    }
-                }
-                PostDomain::IReddIt => {
-                    let post_type = p.attr("post-type").unwrap();
+            let posts_selector = Selector::parse("shreddit-post").unwrap();
 
-                    if post_type == "gif" {
-                        if let Some(url) = p.attr("content-href") {
-                            let slide = Slide::Photo(Photo {
-                                url: url.to_owned(),
-                                site: PostDomain::IReddIt,
-                                created_timestamp: DateTime::parse_from_str(timestamp, format)?,
-                                author: author.to_owned(),
-                                author_id: author_id.to_owned(),
-                                permalink: permalink.to_owned(),
-                            });
+            let doc = Html::parse_document(&body);
 
-                            slides.push(slide);
-                        }
-                    } else {
-                        let el = p
-                            .select(&img_selector)
-                            .last()
-                            .ok_or_else(|| p.html())
-                            .unwrap();
+            let mut posts = Vec::new();
 
-                        if let Some(url) = el.attr("src") {
-                            let slide = Slide::Photo(Photo {
-                                url: url.to_owned(),
-                                site: PostDomain::IReddIt,
-                                created_timestamp: DateTime::parse_from_str(timestamp, format)?,
-                                author: author.to_owned(),
-                                author_id: author_id.to_owned(),
-                                permalink: permalink.to_owned(),
-                            });
+            for child in doc.select(&posts_selector) {
+                posts.push(child);
+            }
 
-                            slides.push(slide);
-                        }
-                    }
-                }
-                PostDomain::VReddIt => {
-                    let source_selector = Selector::parse("shreddit-player > source").unwrap();
+            info!("Parsing slides");
+            parse_slides(&posts, &mut slides)?;
+            debug!(slide_count = slides.len());
 
-                    let el = p.select(&source_selector).last().unwrap();
-
-                    if let Some(s) = el.attr("src") {
-                        let slide = Slide::Video(Video {
-                            url: s.into(),
-                            site: PostDomain::VReddIt,
-                            created_timestamp: DateTime::parse_from_str(timestamp, format)?,
-                            author: author.to_owned(),
-                            author_id: author_id.to_owned(),
-                            permalink: permalink.to_owned(),
-                        });
-
-                        slides.push(slide);
-                    }
-                }
-                PostDomain::Reddit => {
-                    for carousel_item in p.select(&img_selector) {
-                        if let Some(url) = carousel_item.attr("src") {
-                            let slide = Slide::Photo(Photo {
-                                url: url.to_owned(),
-                                site: PostDomain::Reddit,
-                                created_timestamp: DateTime::parse_from_str(timestamp, format)?,
-                                author: author.to_owned(),
-                                author_id: author_id.to_owned(),
-                                permalink: permalink.to_owned(),
-                            });
-
-                            slides.push(slide);
-                        }
-                    }
-                }
-                PostDomain::Unknown(d) => {
-                    eprintln!("skipped a post from an unknown domain: {}", d);
-                }
+            info!("Parsing next navigation URL");
+            if let Some(n_url) = get_next_navigation_url(&doc) {
+                debug!(next_navigation_url = n_url);
+                url = Some(format!("{}{}", REDDIT, n_url));
+            } else {
+                info!("Navigation ended");
+                url = None;
             }
         }
 
         Ok(slides)
     }
+}
+
+fn parse_slides(posts: &Vec<ElementRef<'_>>, slides: &mut Vec<Slide>) -> Result<(), RedditError> {
+    let img_selector = Selector::parse("zoomable-img > img").unwrap();
+
+    for p in posts {
+        let Some(domain) = p.attr("domain").map(PostDomain::from) else {
+            continue;
+        };
+        let author = p
+            .attr("author")
+            .ok_or_else(|| RedditError::UnexpectedDocumentStructure {
+                expect: "author".to_string(),
+                document: p.html(),
+            })?;
+
+        let author_id = {
+            if author == "[deleted]" {
+                "Deleted"
+            } else {
+                p.attr("author-id")
+                    .ok_or_else(|| RedditError::UnexpectedDocumentStructure {
+                        expect: "author-id".to_string(),
+                        document: p.html(),
+                    })?
+            }
+        };
+
+        let permalink =
+            p.attr("permalink")
+                .ok_or_else(|| RedditError::UnexpectedDocumentStructure {
+                    expect: "permalink".to_string(),
+                    document: p.html(),
+                })?;
+
+        let timestamp = p.attr("created-timestamp").ok_or_else(|| {
+            RedditError::UnexpectedDocumentStructure {
+                expect: "created-timestamp".to_string(),
+                document: p.html(),
+            }
+        })?;
+        let format = "%Y-%m-%dT%H:%M:%S%.6f%z";
+
+        match domain {
+            PostDomain::Redgifs => {
+                if let Some(url) = p.attr("content-href") {
+                    let slide = Slide::Video(Video {
+                        url: url.to_owned(),
+                        site: PostDomain::Redgifs,
+                        created_timestamp: DateTime::parse_from_str(timestamp, format)?,
+                        author: author.to_owned(),
+                        author_id: author_id.to_owned(),
+                        permalink: permalink.to_owned(),
+                    });
+
+                    slides.push(slide);
+                }
+            }
+            PostDomain::IRedgifs => {
+                let el = p.select(&img_selector).last().unwrap();
+
+                if let Some(url) = el.attr("src") {
+                    let slide = Slide::Photo(Photo {
+                        url: url.to_owned(),
+                        site: PostDomain::IRedgifs,
+                        created_timestamp: DateTime::parse_from_str(timestamp, format)?,
+                        author: author.to_owned(),
+                        author_id: author_id.to_owned(),
+                        permalink: permalink.to_owned(),
+                    });
+
+                    slides.push(slide);
+                }
+            }
+            PostDomain::IReddIt => {
+                let post_type = p.attr("post-type").unwrap();
+
+                if post_type == "gif" {
+                    if let Some(url) = p.attr("content-href") {
+                        let slide = Slide::Photo(Photo {
+                            url: url.to_owned(),
+                            site: PostDomain::IReddIt,
+                            created_timestamp: DateTime::parse_from_str(timestamp, format)?,
+                            author: author.to_owned(),
+                            author_id: author_id.to_owned(),
+                            permalink: permalink.to_owned(),
+                        });
+
+                        slides.push(slide);
+                    }
+                } else {
+                    let el = p
+                        .select(&img_selector)
+                        .last()
+                        .ok_or_else(|| p.html())
+                        .unwrap();
+
+                    if let Some(url) = el.attr("src") {
+                        let slide = Slide::Photo(Photo {
+                            url: url.to_owned(),
+                            site: PostDomain::IReddIt,
+                            created_timestamp: DateTime::parse_from_str(timestamp, format)?,
+                            author: author.to_owned(),
+                            author_id: author_id.to_owned(),
+                            permalink: permalink.to_owned(),
+                        });
+
+                        slides.push(slide);
+                    }
+                }
+            }
+            PostDomain::VReddIt => {
+                let source_selector = Selector::parse("shreddit-player > source").unwrap();
+
+                let el = p.select(&source_selector).last().unwrap();
+
+                if let Some(s) = el.attr("src") {
+                    let slide = Slide::Video(Video {
+                        url: s.into(),
+                        site: PostDomain::VReddIt,
+                        created_timestamp: DateTime::parse_from_str(timestamp, format)?,
+                        author: author.to_owned(),
+                        author_id: author_id.to_owned(),
+                        permalink: permalink.to_owned(),
+                    });
+
+                    slides.push(slide);
+                }
+            }
+            PostDomain::Reddit => {
+                for carousel_item in p.select(&img_selector) {
+                    if let Some(url) = carousel_item.attr("src") {
+                        let slide = Slide::Photo(Photo {
+                            url: url.to_owned(),
+                            site: PostDomain::Reddit,
+                            created_timestamp: DateTime::parse_from_str(timestamp, format)?,
+                            author: author.to_owned(),
+                            author_id: author_id.to_owned(),
+                            permalink: permalink.to_owned(),
+                        });
+
+                        slides.push(slide);
+                    }
+                }
+            }
+            PostDomain::Unknown(d) => {
+                eprintln!("skipped a post from an unknown domain: {}", d);
+            }
+        }
+    }
+
+    Ok(())
+}
+
+fn get_next_navigation_url(document: &Html) -> Option<&str> {
+    let selector = Selector::parse(r#"[id^="partial-more-posts-"]"#).unwrap();
+
+    let more_posts_tag = document.select(&selector).next_back()?;
+
+    more_posts_tag.attr("src")
 }
