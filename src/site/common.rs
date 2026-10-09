@@ -27,6 +27,7 @@ pub enum Quality {
     Low,
 }
 
+#[derive(Debug)]
 pub enum Slide<P, V> {
     Photo(P),
     Video(V),
