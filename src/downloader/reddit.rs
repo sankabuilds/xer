@@ -5,6 +5,7 @@ use std::{
     sync::{Arc, atomic::AtomicU64},
     time::Duration,
 };
+use thiserror::Error;
 use tokio::spawn;
 
 use crate::downloader::common::request_hls;
@@ -14,21 +15,32 @@ use crate::{
     site::reddit::Slide,
 };
 
-async fn get_redgifs_url(post_url: &str) -> String {
+#[derive(Error, Debug)]
+pub enum RedditDownloaderError {
+    #[error("Redgif most likey deleted: {0}")]
+    VideoDeleted(String),
+
+    #[error("CommonDownloaderError: {0}")]
+    CommonDownloaderError(#[from] CommonDownloaderError),
+}
+
+async fn get_redgifs_url(post_url: &str) -> Result<String, RedditDownloaderError> {
     let res = reqwest::get(post_url).await.unwrap();
 
     let body = res.text().await.unwrap();
     let re = Regex::new(r#"contentUrl":"(.+)", *"creator"#).unwrap();
 
-    let caps = re.captures(&body).unwrap();
+    let caps = re
+        .captures(&body)
+        .ok_or_else(|| RedditDownloaderError::VideoDeleted(post_url.into()))?;
 
-    caps.get(1).unwrap().as_str().replace("-silent", "")
+    Ok(caps.get(1).unwrap().as_str().replace("-silent", ""))
 }
 
 pub async fn fetch(
     slide: &Slide,
     m_pb: Option<MultiProgress>,
-) -> Result<(), CommonDownloaderError> {
+) -> Result<(), RedditDownloaderError> {
     let file_name = slide.get_file_name();
 
     match slide {
@@ -37,7 +49,7 @@ pub async fn fetch(
         }
         Slide::Video(v) => {
             if matches!(v.site, PostDomain::Redgifs) {
-                let redgif_url = get_redgifs_url(&v.url).await;
+                let redgif_url = get_redgifs_url(&v.url).await?;
                 request(&redgif_url, &file_name, m_pb).await?;
             } else if matches!(v.site, PostDomain::VReddIt) {
                 request_hls(&v.url, &file_name, m_pb).await?;
@@ -91,20 +103,20 @@ impl DownloaderOptions {
             let handle = spawn(async move {
                 let m = m_clone.clone();
 
-                if let Err(err) = slide.download(Some(m_clone)).await {
-                    if matches!(err, CommonDownloaderError::FileAlreadyExists(_)) {
-                        // return;
-                    } else {
-                        let _ = m.println(format!(
-                            "failed to download: {} -> {}",
-                            slide.get_file_name(),
-                            err
-                        ));
+                // if let Err(err) = slide.download(Some(m_clone)).await {
+                //     if matches!(err, CommonDownloaderError::FileAlreadyExists(_)) {
+                //         // return;
+                //     } else {
+                //         let _ = m.println(format!(
+                //             "failed to download: {} -> {}",
+                //             slide.get_file_name(),
+                //             err
+                //         ));
 
-                        failed_job_count_clone.fetch_add(1, Relaxed);
-                        // return;
-                    }
-                }
+                //         failed_job_count_clone.fetch_add(1, Relaxed);
+                //         // return;
+                //     }
+                // }
 
                 // let file_name = slide.get_file_name();
 

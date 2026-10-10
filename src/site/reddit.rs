@@ -2,15 +2,19 @@
 
 use chrono::{DateTime, FixedOffset};
 use indicatif::MultiProgress;
+use regex::Regex;
 use reqwest::{StatusCode, Url};
 use scraper::{ElementRef, Html, Selector};
-use std::{fmt::Display, sync::Arc};
+use std::{
+    fmt::Display,
+    sync::{Arc, LazyLock},
+};
 use thiserror::Error;
 use tracing::{debug, info};
 
 use crate::{
     cookie::reddit::{get_jar, new_loaded_client},
-    downloader::{self, common::CommonDownloaderError},
+    downloader::{self, reddit::RedditDownloaderError},
     site::common::{
         self, Site, VideoMetadataTag, WriteMetadata, w_photo_metadata, w_video_metadata,
     },
@@ -202,7 +206,7 @@ impl Slide {
         }
     }
 
-    pub async fn download(&self, m_pb: Option<MultiProgress>) -> Result<(), CommonDownloaderError> {
+    pub async fn download(&self, m_pb: Option<MultiProgress>) -> Result<(), RedditDownloaderError> {
         downloader::reddit::fetch(self, m_pb).await
     }
 }
@@ -296,6 +300,9 @@ impl Reddit {
     }
 }
 
+static RE_REDGIF_IFRAME_URL: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(https://www\.redgifs\.com/ifr/[a-zA-Z]+)").unwrap());
+
 fn parse_slides(posts: &Vec<ElementRef<'_>>, slides: &mut Vec<Slide>) -> Result<(), RedditError> {
     let img_selector = Selector::parse("zoomable-img > img").unwrap();
 
@@ -339,7 +346,20 @@ fn parse_slides(posts: &Vec<ElementRef<'_>>, slides: &mut Vec<Slide>) -> Result<
 
         match domain {
             PostDomain::Redgifs => {
-                if let Some(url) = p.attr("content-href") {
+                let post_type = p.attr("post-type").unwrap();
+
+                if post_type == "crosspost" {
+                    let selector =
+                        Selector::parse("shreddit-async-loader > shreddit-embed").unwrap();
+                    let embed_container = p.select(&selector).last().unwrap();
+                    debug!(cross_post = embed_container.html());
+
+                    let iframe_html_content = embed_container.attr("html").unwrap();
+
+                    let caps = RE_REDGIF_IFRAME_URL.captures(iframe_html_content).unwrap();
+                    let url = caps.get(1).unwrap().as_str();
+                    debug!(cross_post_captured_url = url);
+
                     let slide = Slide::Video(Video {
                         url: url.to_owned(),
                         site: PostDomain::Redgifs,
@@ -350,6 +370,19 @@ fn parse_slides(posts: &Vec<ElementRef<'_>>, slides: &mut Vec<Slide>) -> Result<
                     });
 
                     slides.push(slide);
+                } else {
+                    if let Some(url) = p.attr("content-href") {
+                        let slide = Slide::Video(Video {
+                            url: url.to_owned(),
+                            site: PostDomain::Redgifs,
+                            created_timestamp: DateTime::parse_from_str(timestamp, format)?,
+                            author: author.to_owned(),
+                            author_id: author_id.to_owned(),
+                            permalink: permalink.to_owned(),
+                        });
+
+                        slides.push(slide);
+                    }
                 }
             }
             PostDomain::IRedgifs => {
