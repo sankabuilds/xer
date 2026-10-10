@@ -554,7 +554,7 @@ pub async fn request_hls(
             debug!(video_path = video_path, "Video already exists");
         }
 
-        debug!(video_path = video_path, "Muxing a video only file");
+        debug!(video_path = video_path, "Muxing a video only file"); //wait, what?
         muxx(None, &video_path, &path).await?;
         debug!(video_path = video_path, "Removing temporary video file");
         tokio::fs::remove_file(video_path).await?;
