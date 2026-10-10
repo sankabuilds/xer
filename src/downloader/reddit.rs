@@ -9,6 +9,7 @@ use thiserror::Error;
 use tokio::spawn;
 
 use crate::downloader::common::request_hls;
+use crate::site::common::WriteMetadata;
 use crate::site::reddit::PostDomain;
 use crate::{
     downloader::common::{CommonDownloaderError, request},
@@ -103,29 +104,34 @@ impl DownloaderOptions {
             let handle = spawn(async move {
                 let m = m_clone.clone();
 
-                // if let Err(err) = slide.download(Some(m_clone)).await {
-                //     if matches!(err, CommonDownloaderError::FileAlreadyExists(_)) {
-                //         // return;
-                //     } else {
-                //         let _ = m.println(format!(
-                //             "failed to download: {} -> {}",
-                //             slide.get_file_name(),
-                //             err
-                //         ));
+                if let Err(err) = slide.download(Some(m_clone)).await {
+                    if matches!(
+                        err,
+                        RedditDownloaderError::CommonDownloaderError(
+                            CommonDownloaderError::FileAlreadyExists(_)
+                        )
+                    ) {
+                        return;
+                    } else {
+                        let _ = m.println(format!(
+                            "failed to download: {} -> {}",
+                            slide.get_file_name(),
+                            err
+                        ));
 
-                //         failed_job_count_clone.fetch_add(1, Relaxed);
-                //         // return;
-                //     }
-                // }
+                        failed_job_count_clone.fetch_add(1, Relaxed);
+                        return;
+                    }
+                }
 
-                // let file_name = slide.get_file_name();
+                let file_name = slide.get_file_name();
 
-                // if let Err(err) = slide.write_metadata(&file_name) {
-                //     let _ = m.println(format!(
-                //         "failed to write metadata for the file: {} -> {}",
-                //         file_name, err
-                //     ));
-                // }
+                if let Err(err) = slide.write_metadata(&file_name) {
+                    let _ = m.println(format!(
+                        "failed to write metadata for the file: {} -> {}",
+                        file_name, err
+                    ));
+                }
             });
             handles.push(handle);
 

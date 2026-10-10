@@ -12,6 +12,9 @@ pub struct Cli {
     #[arg(short, long)]
     pub verbose: bool,
 
+    #[arg(hide = true)]
+    pub debug: bool,
+
     #[command(subcommand)]
     pub commands: Commands,
 }
@@ -25,6 +28,10 @@ pub enum Commands {
     /// Instagram - Download Instagram media
     #[command(subcommand)]
     Gram(InstagramCommands),
+
+    /// Reddit - Download Reddit media
+    #[command(subcommand)]
+    Redd(RedditCommands),
 }
 
 #[derive(Subcommand)]
@@ -58,6 +65,29 @@ pub enum InstagramCommands {
 
 #[derive(Args)]
 pub struct InstagramBookmarksArgs {
+    /// Download all the available bookmarks
+    #[arg(short, long, default_value_t = false)]
+    pub all: bool,
+
+    /// Download bookmarks with a limit
+    #[arg(short, long, default_value_t = 100)]
+    pub limit: u32,
+
+    #[arg(long, hide = true, default_value_t = 100)]
+    pub timeout: u64,
+
+    #[arg(long, hide = true, default_value_t = 4)]
+    pub thread_count: u8,
+}
+
+#[derive(Subcommand)]
+pub enum RedditCommands {
+    /// 🔖 Download bookmarks
+    Bookmarks(RedditBookmarksArgs),
+}
+
+#[derive(Args)]
+pub struct RedditBookmarksArgs {
     /// Download all the available bookmarks
     #[arg(short, long, default_value_t = false)]
     pub all: bool,
