@@ -285,13 +285,47 @@ async fn fetch_file(
     file_url: &str,
     pb_prefix: &str,
     file: &mut tokio::fs::File,
+    partial_length: Option<u64>,
 ) -> Result<(), CommonDownloaderError> {
     info!("Fetching file");
 
-    let mut res = reqwest::get(file_url).await?;
-    let content_len = res.content_length().unwrap_or(3e+9 as u64);
+    let client = reqwest::Client::new();
+
+    let mut res = {
+        if let Some(length) = partial_length {
+            info!("Partially downloaded file.");
+
+            debug!("Sending a range request");
+            let res = client
+                .get(file_url)
+                .header(
+                    RANGE,
+                    HeaderValue::from_str(&format!("bytes={}-", length)).unwrap(),
+                )
+                .send()
+                .await?;
+
+            let status = res.status().as_u16();
+            if status != StatusCode::PARTIAL_CONTENT {
+                return Err(CommonDownloaderError::PartialRequestFailed {
+                    status_code: res.status(),
+                    url: res.url().as_str().into(),
+                });
+            }
+            debug!(status = status, "Range request was successful");
+
+            res
+        } else {
+            reqwest::get(file_url).await?
+        }
+    };
+
+    let content_len = res.content_length().unwrap_or(3e+9 as u64) + partial_length.unwrap_or(0);
 
     let pb = get_progress_bar(content_len, pb_prefix);
+    if let Some(length) = partial_length {
+        pb.inc(length);
+    }
 
     while let Some(chuck) = res.chunk().await? {
         file.write_all(&chuck).await?;
@@ -305,22 +339,50 @@ async fn fetch_file(
     Ok(())
 }
 
-/// Written specifically for reddit. May need adjustments to make this more generic
+async fn get_partial_file(
+    partial_file_path: &str,
+    partial_length: &mut Option<u64>,
+) -> Result<tokio::fs::File, CommonDownloaderError> {
+    let file = {
+        let mut op = tokio::fs::OpenOptions::new();
+
+        match op
+            .create_new(true)
+            .write(true)
+            .open(partial_file_path)
+            .await
+        {
+            Err(err) => {
+                if err.kind() == io::ErrorKind::AlreadyExists {
+                    // we can continue downloading the rest of the file
+                    let file_meta = fs::metadata(partial_file_path)?;
+
+                    *partial_length = Some(file_meta.len());
+                    tokio::fs::OpenOptions::new()
+                        .append(true)
+                        .open(partial_file_path)
+                        .await?
+                } else {
+                    return Err(err.into());
+                }
+            }
+            Ok(f) => f,
+        }
+    };
+
+    Ok(file)
+}
+
+struct AudioVideo {
+    video_url: String,
+    audio_url: Option<String>,
+}
+
 #[instrument]
-pub async fn request_hls(
-    playlist_url: &str,
-    file_name: &str,
-    _m_pb: Option<MultiProgress>,
-) -> Result<(), CommonDownloaderError> {
-    let path = format!("./{}", file_name);
-    let video_partial_path = format!("{}-video.partial", path);
-    let audio_partial_path = format!("{}-audio.partial", path);
-
-    if fs::exists(&path)? {
-        return Err(CommonDownloaderError::FileAlreadyExists(path));
-    }
-
-    let master_playlist = reqwest::get(playlist_url).await?.text().await?;
+async fn get_audio_video_from_master_playlist(
+    mp_url: &str,
+) -> Result<AudioVideo, CommonDownloaderError> {
+    let master_playlist = reqwest::get(mp_url).await?.text().await?;
     debug!(master_playlist_response = master_playlist);
 
     info!("Parsing Master Playlist");
@@ -334,86 +396,168 @@ pub async fn request_hls(
     let audio_streams = mp.alternatives;
     debug!(audio_streams = ?audio_streams);
 
-    let VariantStream { uri, audio, .. } = mp.variants.last().unwrap();
+    let VariantStream {
+        uri: best_video_media_playlist_uri,
+        audio: audio_id,
+        ..
+    } = mp.variants.last().unwrap();
 
-    if let Some(audio_id) = audio {
-        let audio = audio_streams
+    if let Some(id) = audio_id {
+        let best_audio_media_playlist_uri = audio_streams
             .iter()
-            .find(|v| &v.group_id == audio_id)
+            .find(|v| &v.group_id == id)
             .unwrap()
             .uri
             .as_ref()
             .unwrap();
 
         let (audio_url, video_url) = {
-            if uri.contains("CMAF") {
-                let audio_url = playlist_url
-                    .replace("HLSPlaylist.m3u8", audio)
+            if best_video_media_playlist_uri.contains("CMAF") {
+                let audio_url = mp_url
+                    .replace("HLSPlaylist.m3u8", best_audio_media_playlist_uri)
                     .replace("m3u8", "mp4");
-                let video_url = playlist_url
-                    .replace("HLSPlaylist.m3u8", uri)
+                let video_url = mp_url
+                    .replace("HLSPlaylist.m3u8", best_video_media_playlist_uri)
                     .replace("m3u8", "mp4");
 
                 (audio_url, video_url)
             } else {
-                let audio_url = playlist_url
-                    .replace("HLSPlaylist.m3u8", audio)
+                let audio_url = mp_url
+                    .replace("HLSPlaylist.m3u8", best_audio_media_playlist_uri)
                     .replace("m3u8", "aac");
-                let video_url = playlist_url
-                    .replace("HLSPlaylist.m3u8", uri)
+                let video_url = mp_url
+                    .replace("HLSPlaylist.m3u8", best_video_media_playlist_uri)
                     .replace("m3u8", "ts");
 
                 (audio_url, video_url)
             }
         };
 
+        Ok(AudioVideo {
+            audio_url: Some(audio_url),
+            video_url,
+        })
+    } else {
+        let video_url = {
+            if best_video_media_playlist_uri.contains("CMAF") {
+                mp_url
+                    .replace("HLSPlaylist.m3u8", best_video_media_playlist_uri)
+                    .replace("m3u8", "mp4")
+            } else {
+                mp_url
+                    .replace("HLSPlaylist.m3u8", best_video_media_playlist_uri)
+                    .replace("m3u8", "ts")
+            }
+        };
+
+        Ok(AudioVideo {
+            audio_url: None,
+            video_url,
+        })
+    }
+}
+
+/// Written specifically for reddit. May need adjustments to make this more generic
+#[instrument]
+pub async fn request_hls(
+    playlist_url: &str,
+    file_name: &str,
+    _m_pb: Option<MultiProgress>,
+) -> Result<(), CommonDownloaderError> {
+    let path = format!("./{}", file_name);
+
+    let video_partial_path = format!("{}-video.partial", path);
+    let audio_partial_path = format!("{}-audio.partial", path);
+
+    let video_path = video_partial_path.replace(".partial", "");
+    let audio_path = audio_partial_path.replace(".partial", "");
+
+    if fs::exists(&path)? {
+        // TODO
+        // is the file incomplete? if so, we should remove it
+        return Err(CommonDownloaderError::FileAlreadyExists(path));
+    }
+
+    let AudioVideo {
+        audio_url,
+        video_url,
+    } = get_audio_video_from_master_playlist(playlist_url).await?;
+
+    if let Some(audio_url) = audio_url {
         info!("Video URL" = video_url, "Audio URL" = audio_url);
 
         // VIDEO
-        let mut partial_video_file = {
-            let mut op = tokio::fs::OpenOptions::new();
+        if !tokio::fs::try_exists(&video_path).await? {
+            let mut partial_length = None;
+            let mut partial_video_file =
+                get_partial_file(&video_partial_path, &mut partial_length).await?;
 
-            op.create(true)
-                .write(true)
-                .open(&video_partial_path)
-                .await?
-        };
-        fetch_file(&video_url, &video_partial_path, &mut partial_video_file).await?;
+            fetch_file(
+                &video_url,
+                &video_partial_path,
+                &mut partial_video_file,
+                partial_length,
+            )
+            .await?;
+            tokio::fs::rename(&video_partial_path, &video_path).await?;
+        } else {
+            debug!(video_path = video_path, "Video already exists");
+        }
 
         // AUDIO
-        let mut partial_audio_file = {
-            let mut op = tokio::fs::OpenOptions::new();
+        if !tokio::fs::try_exists(&audio_path).await? {
+            let mut partial_length = None;
+            let mut partial_audio_file =
+                get_partial_file(&audio_partial_path, &mut partial_length).await?;
 
-            op.create(true)
-                .write(true)
-                .open(&audio_partial_path)
-                .await?
-        };
-        fetch_file(&audio_url, &audio_partial_path, &mut partial_audio_file).await?;
+            fetch_file(
+                &audio_url,
+                &audio_partial_path,
+                &mut partial_audio_file,
+                partial_length,
+            )
+            .await?;
+            tokio::fs::rename(&audio_partial_path, &audio_path).await?;
+        } else {
+            debug!(audio_path = audio_path, "Audio already exists");
+        }
 
         // muxxing
-        muxx(Some(&audio_partial_path), &video_partial_path, &path).await?;
-        tokio::fs::remove_file(audio_partial_path).await?;
-        tokio::fs::remove_file(video_partial_path).await?;
+        info!(Audio = audio_path, Video = video_path, "Muxing");
+        muxx(Some(&audio_path), &video_path, &path).await?;
+        debug!(
+            audio_path = audio_path,
+            video_path = video_path,
+            "Removing temporary audio & video files"
+        );
+        tokio::fs::remove_file(audio_path).await?;
+        tokio::fs::remove_file(video_path).await?;
 
         println!("{}", path.green());
     } else {
-        let video_url = playlist_url
-            .replace("HLSPlaylist.m3u8", uri)
-            .replace("m3u8", "ts");
+        info!("Video Only file");
 
-        let mut video_file = {
-            let mut op = tokio::fs::OpenOptions::new();
+        if !tokio::fs::try_exists(&video_path).await? {
+            let mut partial_length = None;
+            let mut partial_video_file =
+                get_partial_file(&video_partial_path, &mut partial_length).await?;
 
-            op.create(true)
-                .write(true)
-                .open(&video_partial_path)
-                .await?
-        };
-        fetch_file(&video_url, &video_partial_path, &mut video_file).await?;
+            fetch_file(
+                &video_url,
+                &video_partial_path,
+                &mut partial_video_file,
+                partial_length,
+            )
+            .await?;
+            tokio::fs::rename(&video_partial_path, &video_path).await?;
+        } else {
+            debug!(video_path = video_path, "Video already exists");
+        }
 
-        muxx(None, &video_partial_path, &path).await?;
-        tokio::fs::remove_file(video_partial_path).await?;
+        debug!(video_path = video_path, "Muxing a video only file");
+        muxx(None, &video_path, &path).await?;
+        debug!(video_path = video_path, "Removing temporary video file");
+        tokio::fs::remove_file(video_path).await?;
 
         println!("{}", path.green());
     }
