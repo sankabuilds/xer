@@ -12,7 +12,7 @@ use thiserror::Error;
 use tokio::io::AsyncWriteExt;
 use tracing::{debug, error, info, instrument};
 
-use crate::downloader::utils::get_progress_bar;
+use crate::downloader::utils::{get_progress_bar, set_progress_bar_styles};
 
 #[derive(Error, Debug)]
 pub enum CommonDownloaderError {
@@ -286,6 +286,7 @@ async fn fetch_file(
     pb_prefix: &str,
     file: &mut tokio::fs::File,
     partial_length: Option<u64>,
+    multi_progressbar: Option<&MultiProgress>,
 ) -> Result<(), CommonDownloaderError> {
     info!("Fetching file");
 
@@ -322,7 +323,16 @@ async fn fetch_file(
 
     let content_len = res.content_length().unwrap_or(3e+9 as u64) + partial_length.unwrap_or(0);
 
-    let pb = get_progress_bar(content_len, pb_prefix);
+    let pb = {
+        if let Some(m_pb) = multi_progressbar {
+            let mut pb = m_pb.add(ProgressBar::new(content_len));
+            set_progress_bar_styles(&mut pb, pb_prefix);
+
+            pb
+        } else {
+            get_progress_bar(content_len, pb_prefix)
+        }
+    };
     if let Some(length) = partial_length {
         pb.inc(length);
     }
@@ -462,7 +472,7 @@ async fn get_audio_video_from_master_playlist(
 pub async fn request_hls(
     playlist_url: &str,
     file_name: &str,
-    _m_pb: Option<MultiProgress>,
+    m_pb: Option<MultiProgress>,
 ) -> Result<(), CommonDownloaderError> {
     let path = format!("./{}", file_name);
 
@@ -475,6 +485,15 @@ pub async fn request_hls(
     if fs::exists(&path)? {
         // TODO
         // is the file incomplete? if so, we should remove it
+
+        if let Some(m) = m_pb {
+            if let Err(err) = m.println(format!("{}", path.truecolor(145, 145, 145))) {
+                eprintln!("warning: failed to reset terminal: {}", err);
+            }
+        } else {
+            println!("{}", path.truecolor(145, 145, 145));
+        }
+
         return Err(CommonDownloaderError::FileAlreadyExists(path));
     }
 
@@ -497,6 +516,7 @@ pub async fn request_hls(
                 &video_partial_path,
                 &mut partial_video_file,
                 partial_length,
+                m_pb.as_ref(),
             )
             .await?;
             tokio::fs::rename(&video_partial_path, &video_path).await?;
@@ -515,6 +535,7 @@ pub async fn request_hls(
                 &audio_partial_path,
                 &mut partial_audio_file,
                 partial_length,
+                m_pb.as_ref(),
             )
             .await?;
             tokio::fs::rename(&audio_partial_path, &audio_path).await?;
@@ -533,7 +554,11 @@ pub async fn request_hls(
         tokio::fs::remove_file(audio_path).await?;
         tokio::fs::remove_file(video_path).await?;
 
-        println!("{}", path.green());
+        if let Some(m_pb) = m_pb {
+            m_pb.println(format!("{}", path.green()))?;
+        } else {
+            println!("{}", path.green());
+        }
     } else {
         info!("Video Only file");
 
@@ -547,6 +572,7 @@ pub async fn request_hls(
                 &video_partial_path,
                 &mut partial_video_file,
                 partial_length,
+                m_pb.as_ref(),
             )
             .await?;
             tokio::fs::rename(&video_partial_path, &video_path).await?;
@@ -559,7 +585,11 @@ pub async fn request_hls(
         debug!(video_path = video_path, "Removing temporary video file");
         tokio::fs::remove_file(video_path).await?;
 
-        println!("{}", path.green());
+        if let Some(m_pb) = m_pb {
+            m_pb.println(format!("{}", path.green()))?;
+        } else {
+            println!("{}", path.green());
+        }
     }
 
     Ok(())

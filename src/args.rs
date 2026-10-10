@@ -12,7 +12,7 @@ pub struct Cli {
     #[arg(short, long)]
     pub verbose: bool,
 
-    #[arg(hide = true)]
+    #[arg(long, hide = true)]
     pub debug: bool,
 
     #[command(subcommand)]
