@@ -4,7 +4,7 @@ use anyhow::{Context, Result};
 use tracing::{debug, info};
 use tracing_subscriber::EnvFilter;
 use xxer::{
-    downloader::common::CommonDownloaderError,
+    downloader::{common::CommonDownloaderError, reddit::RedditDownloaderError},
     site::{
         common::{Site, WriteMetadata},
         reddit::{Reddit, ViewType},
@@ -29,15 +29,24 @@ async fn main() -> Result<()> {
 
     info!("Getting slides");
     let slides = Reddit::new(cookie_file)
-        .get(ViewType::Bookmarks, Some(100))
+        .get(ViewType::Bookmarks, Some(300))
         .await
         .context("failed to get the ViewType")?;
 
     for slide in &slides {
         debug!(slide = ?slide, "Downloading");
         if let Err(err) = slide.download(None).await {
-            if matches!(err, CommonDownloaderError::FileAlreadyExists(_)) {
+            if matches!(
+                err,
+                RedditDownloaderError::CommonDownloaderError(
+                    CommonDownloaderError::FileAlreadyExists(_)
+                )
+            ) {
                 debug!(slide = ?slide, "Already exists. Skipping.");
+
+                continue;
+            } else if matches!(err, RedditDownloaderError::VideoDeleted(_)) {
+                debug!(slide = ?slide, "Deleted. Skipping.");
 
                 continue;
             }
