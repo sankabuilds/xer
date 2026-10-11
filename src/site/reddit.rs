@@ -272,7 +272,8 @@ impl Reddit {
 
             let body = res.text().await?;
 
-            let posts_selector = Selector::parse("shreddit-post").unwrap();
+            let posts_selector =
+                Selector::parse("shreddit-post").expect("The CSS Selector should be valid");
 
             let doc = Html::parse_document(&body);
 
@@ -304,7 +305,8 @@ static RE_REDGIF_IFRAME_URL: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"(https://www\.redgifs\.com/ifr/[a-zA-Z]+)").unwrap());
 
 fn parse_slides(posts: &Vec<ElementRef<'_>>, slides: &mut Vec<Slide>) -> Result<(), RedditError> {
-    let img_selector = Selector::parse("zoomable-img > img").unwrap();
+    let img_selector =
+        Selector::parse("zoomable-img > img").expect("The CSS Selector should be valid");
 
     for p in posts {
         let Some(domain) = p.attr("domain").map(PostDomain::from) else {
@@ -349,8 +351,8 @@ fn parse_slides(posts: &Vec<ElementRef<'_>>, slides: &mut Vec<Slide>) -> Result<
                 let post_type = p.attr("post-type").unwrap();
 
                 if post_type == "crosspost" {
-                    let selector =
-                        Selector::parse("shreddit-async-loader > shreddit-embed").unwrap();
+                    let selector = Selector::parse("shreddit-async-loader > shreddit-embed")
+                        .expect("The CSS Selector should be valid");
                     let embed_container = p.select(&selector).last().unwrap();
                     debug!(cross_post = embed_container.html());
 
@@ -439,7 +441,8 @@ fn parse_slides(posts: &Vec<ElementRef<'_>>, slides: &mut Vec<Slide>) -> Result<
                 }
             }
             PostDomain::VReddIt => {
-                let source_selector = Selector::parse("shreddit-player > source").unwrap();
+                let source_selector = Selector::parse("shreddit-player > source")
+                    .expect("The CSS Selector should be valid");
 
                 let el = p.select(&source_selector).last().unwrap();
 
@@ -482,7 +485,8 @@ fn parse_slides(posts: &Vec<ElementRef<'_>>, slides: &mut Vec<Slide>) -> Result<
 }
 
 fn get_next_navigation_url(document: &Html) -> Option<&str> {
-    let selector = Selector::parse(r#"[id^="partial-more-posts-"]"#).unwrap();
+    let selector = Selector::parse(r#"[id^="partial-more-posts-"]"#)
+        .expect("The CSS Selector should be valid");
 
     let more_posts_tag = document.select(&selector).next_back()?;
 
