@@ -302,7 +302,7 @@ impl Reddit {
 }
 
 static RE_REDGIF_IFRAME_URL: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"(https://www\.redgifs\.com/ifr/[a-zA-Z]+)")
+    Regex::new(r"(https://www\.redgifs\.com/ifr/[a-zA-Z0-9]+)")
         .expect("The Regex expression has been tested and should be working")
 });
 
