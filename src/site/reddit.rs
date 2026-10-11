@@ -10,7 +10,7 @@ use std::{
     sync::{Arc, LazyLock},
 };
 use thiserror::Error;
-use tracing::{debug, info};
+use tracing::{debug, info, warn};
 
 use crate::{
     cookie::reddit::{get_jar, new_loaded_client},
@@ -361,15 +361,15 @@ fn parse_slides(posts: &Vec<ElementRef<'_>>, slides: &mut Vec<Slide>) -> Result<
                     let selector = Selector::parse("shreddit-async-loader > shreddit-embed")
                         .expect("The CSS Selector should be valid");
 
-                    let embed_container = p.select(&selector).last().ok_or_else(|| {
-                        RedditError::UnexpectedDocumentStructure {
-                            expect: format!(
-                                "At least a single item for the selector: {}",
-                                selector.to_css_string()
-                            ),
-                            document: p.html(),
-                        }
-                    })?;
+                    let Some(embed_container) = p.select(&selector).last() else {
+                        warn!(
+                            post = p.html(),
+                            selector = selector.to_css_string(),
+                            "Looked for an item with the Selector. Couldn't find any, skipping"
+                        );
+
+                        continue;
+                    };
                     debug!(cross_post = embed_container.html());
 
                     let iframe_html_content = embed_container.attr("html").ok_or_else(|| {
