@@ -4,7 +4,7 @@ use chrono::{DateTime, FixedOffset};
 use indicatif::MultiProgress;
 use regex::Regex;
 use reqwest::{StatusCode, Url};
-use scraper::{ElementRef, Html, Selector};
+use scraper::{ElementRef, Html, Selector, selector::ToCss};
 use std::{
     fmt::Display,
     sync::{Arc, LazyLock},
@@ -350,18 +350,51 @@ fn parse_slides(posts: &Vec<ElementRef<'_>>, slides: &mut Vec<Slide>) -> Result<
 
         match domain {
             PostDomain::Redgifs => {
-                let post_type = p.attr("post-type").unwrap();
+                let post_type = p.attr("post-type").ok_or_else(|| {
+                    RedditError::UnexpectedDocumentStructure {
+                        expect: "post-type".to_owned(),
+                        document: p.html(),
+                    }
+                })?;
 
                 if post_type == "crosspost" {
                     let selector = Selector::parse("shreddit-async-loader > shreddit-embed")
                         .expect("The CSS Selector should be valid");
-                    let embed_container = p.select(&selector).last().unwrap();
+
+                    let embed_container = p.select(&selector).last().ok_or_else(|| {
+                        RedditError::UnexpectedDocumentStructure {
+                            expect: format!(
+                                "At least a single item for the selector: {}",
+                                selector.to_css_string()
+                            ),
+                            document: p.html(),
+                        }
+                    })?;
                     debug!(cross_post = embed_container.html());
 
-                    let iframe_html_content = embed_container.attr("html").unwrap();
+                    let iframe_html_content = embed_container.attr("html").ok_or_else(|| {
+                        RedditError::UnexpectedDocumentStructure {
+                            expect: "html attribute".to_owned(),
+                            document: embed_container.html(),
+                        }
+                    })?;
 
-                    let caps = RE_REDGIF_IFRAME_URL.captures(iframe_html_content).unwrap();
-                    let url = caps.get(1).unwrap().as_str();
+                    let caps = RE_REDGIF_IFRAME_URL
+                        .captures(iframe_html_content)
+                        .ok_or_else(|| RedditError::UnexpectedDocumentStructure {
+                            expect: "Redgifs iframe URL".to_owned(),
+                            document: iframe_html_content.to_owned(),
+                        })?;
+
+                    let url = caps
+                        .get(1)
+                        .ok_or_else(|| RedditError::UnexpectedDocumentStructure {
+                            expect:
+                                "A capture group at index 1 which contains the Redgifs iframe URL"
+                                    .to_owned(),
+                            document: iframe_html_content.to_owned(),
+                        })?
+                        .as_str();
                     debug!(cross_post_captured_url = url);
 
                     let slide = Slide::Video(Video {
