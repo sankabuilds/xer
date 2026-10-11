@@ -301,8 +301,10 @@ impl Reddit {
     }
 }
 
-static RE_REDGIF_IFRAME_URL: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"(https://www\.redgifs\.com/ifr/[a-zA-Z]+)").unwrap());
+static RE_REDGIF_IFRAME_URL: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"(https://www\.redgifs\.com/ifr/[a-zA-Z]+)")
+        .expect("The Regex expression has been tested and should be working")
+});
 
 fn parse_slides(posts: &Vec<ElementRef<'_>>, slides: &mut Vec<Slide>) -> Result<(), RedditError> {
     let img_selector =
