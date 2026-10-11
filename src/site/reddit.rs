@@ -41,6 +41,9 @@ pub enum RedditError {
 
     #[error("Chrono parse error: {0}")]
     ChronoParseError(#[from] chrono::ParseError),
+
+    #[error("ParseError: {0}")]
+    UrlParseError(#[from] url::ParseError),
 }
 
 #[derive(Debug)]
@@ -454,6 +457,40 @@ fn parse_slides(posts: &Vec<ElementRef<'_>>, slides: &mut Vec<Slide>) -> Result<
 
                         slides.push(slide);
                     }
+                } else if post_type == "crosspost" {
+                    let selector = Selector::parse("shreddit-player")
+                        .expect("The CSS Selector should be valid");
+
+                    let Some(player_container) = p.select(&selector).last() else {
+                        warn!(
+                            post = p.html(),
+                            selector = selector.to_css_string(),
+                            "Looked for an item with the Selector. Couldn't find any, skipping"
+                        );
+
+                        continue;
+                    };
+
+                    let gif_url = player_container
+                        .attr("src")
+                        .ok_or_else(|| RedditError::UnexpectedDocumentStructure {
+                            expect: "src".to_owned(),
+                            document: player_container.html(),
+                        })?
+                        .parse::<Url>()?;
+
+                    let url = "https://i.redd.it".to_owned() + gif_url.path();
+
+                    let slide = Slide::Photo(Photo {
+                        url,
+                        site: PostDomain::IReddIt,
+                        created_timestamp: DateTime::parse_from_str(timestamp, format)?,
+                        author: author.to_owned(),
+                        author_id: author_id.to_owned(),
+                        permalink: permalink.to_owned(),
+                    });
+
+                    slides.push(slide);
                 } else {
                     let el = p
                         .select(&img_selector)
