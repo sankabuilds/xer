@@ -44,6 +44,9 @@ pub enum RedditError {
 
     #[error("ParseError: {0}")]
     UrlParseError(#[from] url::ParseError),
+
+    #[error("Couldn't find elements with the selector: ({selector}) in the container: {container}")]
+    NoMatchingElementsError { selector: String, container: String },
 }
 
 #[derive(Debug)]
@@ -88,21 +91,29 @@ impl Display for Photo {
 impl Photo {
     fn get_file_name(&self) -> String {
         match self.site {
-            PostDomain::IReddIt | PostDomain::Reddit => {
-                let url = self.url.parse::<Url>().unwrap();
-                let mut split = url.path().split(".");
+            PostDomain::IReddIt | PostDomain::Reddit => match self.url.parse::<Url>() {
+                Ok(url) => {
+                    let mut split = url.path().split(".");
 
-                let filename = split.next().map(|f| &f[1..]);
-                let ext = split.last();
+                    let filename = split.next().map(|f| &f[1..]);
+                    let ext = split.last();
 
-                if let Some(ext) = ext
-                    && let Some(filename) = filename
-                {
-                    self.created_timestamp.timestamp().to_string() + "_" + filename + "." + ext
-                } else {
-                    self.created_timestamp.timestamp().to_string()
+                    if let Some(ext) = ext
+                        && let Some(filename) = filename
+                    {
+                        self.created_timestamp.timestamp().to_string() + "_" + filename + "." + ext
+                    } else {
+                        self.created_timestamp.timestamp().to_string()
+                    }
                 }
-            }
+                Err(_) => {
+                    warn!(
+                        url = self.url,
+                        "Failed to parse PostDomain::IReddIt/Reddit url. Using created_timestamp as the file name"
+                    );
+                    self.created_timestamp.timestamp().to_string() + ".bin"
+                }
+            },
             PostDomain::Redgifs => self.created_timestamp.timestamp().to_string() + ".jpg",
             PostDomain::IRedgifs => self.created_timestamp.timestamp().to_string() + ".jpg",
             PostDomain::VReddIt => self.created_timestamp.timestamp().to_string() + ".jpg",
@@ -132,21 +143,29 @@ impl Display for Video {
 impl Video {
     fn get_file_name(&self) -> String {
         match self.site {
-            PostDomain::IReddIt | PostDomain::Reddit => {
-                let url = self.url.parse::<Url>().unwrap();
-                let mut split = url.path().split(".");
+            PostDomain::IReddIt | PostDomain::Reddit => match self.url.parse::<Url>() {
+                Ok(url) => {
+                    let mut split = url.path().split(".");
 
-                let filename = split.next().map(|f| &f[1..]);
-                let ext = split.last();
+                    let filename = split.next().map(|f| &f[1..]);
+                    let ext = split.last();
 
-                if let Some(ext) = ext
-                    && let Some(filename) = filename
-                {
-                    self.created_timestamp.timestamp().to_string() + "_" + filename + "." + ext
-                } else {
-                    self.created_timestamp.timestamp().to_string()
+                    if let Some(ext) = ext
+                        && let Some(filename) = filename
+                    {
+                        self.created_timestamp.timestamp().to_string() + "_" + filename + "." + ext
+                    } else {
+                        self.created_timestamp.timestamp().to_string()
+                    }
                 }
-            }
+                Err(_) => {
+                    warn!(
+                        url = self.url,
+                        "Failed to parse PostDomain::IReddIt/Reddit url. Using created_timestamp as the file name"
+                    );
+                    self.created_timestamp.timestamp().to_string() + ".bin"
+                }
+            },
             PostDomain::Redgifs => self.created_timestamp.timestamp().to_string() + ".mp4",
             PostDomain::IRedgifs => self.created_timestamp.timestamp().to_string() + ".mp4",
             PostDomain::VReddIt => self.created_timestamp.timestamp().to_string() + ".mp4",
@@ -426,7 +445,13 @@ fn parse_slides(posts: &Vec<ElementRef<'_>>, slides: &mut Vec<Slide>) -> Result<
                 }
             }
             PostDomain::IRedgifs => {
-                let el = p.select(&img_selector).last().unwrap();
+                let el =
+                    p.select(&img_selector)
+                        .last()
+                        .ok_or(RedditError::NoMatchingElementsError {
+                            selector: img_selector.to_css_string(),
+                            container: p.html(),
+                        })?;
 
                 if let Some(url) = el.attr("src") {
                     let slide = Slide::Photo(Photo {
@@ -442,7 +467,9 @@ fn parse_slides(posts: &Vec<ElementRef<'_>>, slides: &mut Vec<Slide>) -> Result<
                 }
             }
             PostDomain::IReddIt => {
-                let post_type = p.attr("post-type").unwrap();
+                let post_type = p
+                    .attr("post-type")
+                    .expect("Every post should have a 'post-type' attribute");
 
                 if post_type == "gif" {
                     if let Some(url) = p.attr("content-href") {
@@ -492,12 +519,12 @@ fn parse_slides(posts: &Vec<ElementRef<'_>>, slides: &mut Vec<Slide>) -> Result<
 
                     slides.push(slide);
                 } else {
-                    let el = p
-                        .select(&img_selector)
-                        .last()
-                        .ok_or_else(|| p.html())
-                        .unwrap();
-
+                    let el = p.select(&img_selector).last().ok_or(
+                        RedditError::NoMatchingElementsError {
+                            selector: img_selector.to_css_string(),
+                            container: p.html(),
+                        },
+                    )?;
                     if let Some(url) = el.attr("src") {
                         let slide = Slide::Photo(Photo {
                             url: url.to_owned(),
@@ -516,7 +543,12 @@ fn parse_slides(posts: &Vec<ElementRef<'_>>, slides: &mut Vec<Slide>) -> Result<
                 let source_selector = Selector::parse("shreddit-player > source")
                     .expect("The CSS Selector should be valid");
 
-                let el = p.select(&source_selector).last().unwrap();
+                let el = p.select(&source_selector).last().ok_or(
+                    RedditError::NoMatchingElementsError {
+                        selector: source_selector.to_css_string(),
+                        container: p.html(),
+                    },
+                )?;
 
                 if let Some(s) = el.attr("src") {
                     let slide = Slide::Video(Video {
