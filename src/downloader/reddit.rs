@@ -23,19 +23,29 @@ pub enum RedditDownloaderError {
 
     #[error("CommonDownloaderError: {0}")]
     CommonDownloaderError(#[from] CommonDownloaderError),
+
+    #[error("Regex capture group at index 1 (redgif url) doesn't exist")]
+    NoIndexZeroError,
 }
 
 async fn get_redgifs_url(post_url: &str) -> Result<String, RedditDownloaderError> {
-    let res = reqwest::get(post_url).await.unwrap();
+    let res = reqwest::get(post_url)
+        .await
+        .map_err(CommonDownloaderError::Reqwest)?;
 
-    let body = res.text().await.unwrap();
-    let re = Regex::new(r#"contentUrl":"(.+)", *"creator"#).unwrap();
+    let body = res.text().await.map_err(CommonDownloaderError::Reqwest)?;
+    let re = Regex::new(r#"contentUrl":"(.+)", *"creator"#)
+        .expect("The regex is tested and should be working");
 
     let caps = re
         .captures(&body)
         .ok_or_else(|| RedditDownloaderError::VideoDeleted(post_url.into()))?;
 
-    Ok(caps.get(1).unwrap().as_str().replace("-silent", ""))
+    Ok(caps
+        .get(1)
+        .ok_or(RedditDownloaderError::NoIndexZeroError)?
+        .as_str()
+        .replace("-silent", ""))
 }
 
 pub async fn fetch(
