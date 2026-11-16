@@ -2,7 +2,7 @@
 
 use indicatif::MultiProgress;
 use log::info;
-use reqwest::Url;
+use reqwest::{StatusCode, Url};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::{fmt::Display, str::FromStr, sync::Arc};
@@ -35,6 +35,12 @@ pub enum InstagramError {
 
     #[error("No bookmarks available in your Instagram account")]
     ZeroBookmarks,
+
+    #[error("Call to the api failed with status code: {status}")]
+    ApiCallFailedError { status: StatusCode },
+
+    #[error("API response doesn't contain JSON")]
+    ApiResponseNotJsonError,
 }
 
 pub type Slide = common::Slide<Photo, Video>;
@@ -43,12 +49,12 @@ impl From<Clip> for Slide {
     fn from(c: Clip) -> Self {
         Self::Video(Video {
             parent_pk: None,
-            pk: c.pk.clone(),
+            pk: c.pk,
             url: c.video_version_container.get(Quality::Best).to_owned(),
             metadata: MetadataContainer {
-                author_id: c.owner.id,
-                author_username: c.owner.username,
-                author_full_name: c.owner.full_name,
+                author_id: c.user.id,
+                author_username: c.user.username,
+                author_full_name: c.user.full_name,
                 post_url: format!("{}/p/{}", INSTAGRAM, c.code),
             },
         })
@@ -64,9 +70,9 @@ impl From<Feed> for Slide {
                 url: image_versions2.get(Quality::Best).to_owned(),
 
                 metadata: MetadataContainer {
-                    author_id: f.owner.id,
-                    author_username: f.owner.username,
-                    author_full_name: f.owner.full_name,
+                    author_id: f.user.id,
+                    author_username: f.user.username,
+                    author_full_name: f.user.full_name,
                     post_url: format!("{}/p/{}", INSTAGRAM, f.code),
                 },
             }),
@@ -76,9 +82,9 @@ impl From<Feed> for Slide {
                 url: v.get(Quality::Best).to_owned(),
 
                 metadata: MetadataContainer {
-                    author_id: f.owner.id,
-                    author_username: f.owner.username,
-                    author_full_name: f.owner.full_name,
+                    author_id: f.user.id,
+                    author_username: f.user.username,
+                    author_full_name: f.user.full_name,
                     post_url: format!("{}/p/{}", INSTAGRAM, f.code),
                 },
             }),
@@ -163,8 +169,8 @@ pub struct MetadataContainer {
 
 #[derive(Debug)]
 pub struct Photo {
-    pub parent_pk: Option<String>,
-    pub pk: String,
+    pub parent_pk: Option<u64>,
+    pub pk: u64,
     pub url: String,
 
     pub metadata: MetadataContainer,
@@ -200,8 +206,8 @@ impl Photo {
 
 #[derive(Debug)]
 pub struct Video {
-    pub parent_pk: Option<String>,
-    pub pk: String,
+    pub parent_pk: Option<u64>,
+    pub pk: u64,
     pub url: String,
 
     pub metadata: MetadataContainer,
@@ -288,17 +294,17 @@ enum ProductType {
 #[derive(Serialize, Deserialize)]
 struct Clip {
     #[serde(skip_deserializing)]
-    pk: String,
+    pk: u64,
 
     code: String,
-    owner: Owner,
+    user: User,
 
     #[serde(flatten)]
     video_version_container: VideoVersionContainer,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-struct Owner {
+struct User {
     id: String,
     full_name: String,
     username: String,
@@ -318,7 +324,7 @@ struct VideoVersion {
 #[derive(Serialize, Deserialize)]
 struct CarouselContainer {
     code: String,
-    owner: Owner,
+    user: User,
     carousel_media: Vec<CarouselItem>,
 }
 
@@ -330,12 +336,12 @@ enum CarouselItem {
         media_type: u8,
         #[serde(flatten)]
         video_version_container: VideoVersionContainer,
-        pk: String,
+        pk: u64,
     },
     Image {
         product_type: String,
         media_type: u8,
-        pk: String,
+        pk: u64,
         image_versions2: CandidateContainer,
     },
 }
@@ -381,13 +387,13 @@ struct CandidateItem {
 #[derive(Serialize, Deserialize, Debug)]
 struct Feed {
     #[serde(skip_deserializing)]
-    pk: String,
+    pk: u64,
 
     #[serde(flatten)]
     feed_container: FeedContainer,
 
     code: String,
-    owner: Owner,
+    user: User,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -422,7 +428,7 @@ impl Instagram {
             .client
             .get(INSTAGRAM.to_owned() + "/api/v1/feed/saved/posts/")
             .header("X-Ig-App-Id", "936619743392459")
-            .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36");
+            .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36").header("Sec-Fetch-Site", "same-origin");
 
             if let Some(next_id) = next_max_id {
                 req = req.query(&[("max_id", next_id)]);
@@ -430,8 +436,15 @@ impl Instagram {
 
             let res = req.send().await?;
 
+            if res.status() != StatusCode::OK {
+                return Err(InstagramError::ApiCallFailedError {
+                    status: res.status(),
+                });
+            }
+
             let body = res.text().await?;
-            let res = serde_json::Value::from_str(&body)?;
+            let res = serde_json::Value::from_str(&body)
+                .map_err(|_| InstagramError::ApiResponseNotJsonError)?;
 
             for item in res["items"].as_array().ok_or_else(|| {
                 InstagramError::UnexpectedResponse("could not find `items` array".to_owned())
@@ -455,14 +468,14 @@ impl Instagram {
                         }
                     };
 
-                let p_pk = item["media"]["pk"].as_str().ok_or_else(|| {
+                let p_pk = item["media"]["pk"].as_u64().ok_or_else(|| {
                     InstagramError::UnexpectedResponse("could not find `pk` in the item".to_owned())
                 })?;
 
                 match item_type {
                     ProductType::Clips => {
                         let mut clip = serde_json::from_value::<Clip>(item["media"].clone())?;
-                        clip.pk = p_pk.to_owned();
+                        clip.pk = p_pk;
 
                         slide_list.push(clip.into());
                     }
@@ -479,17 +492,14 @@ impl Instagram {
                                     pk,
                                 } => {
                                     let photo: Photo = Photo {
-                                        parent_pk: Some(p_pk.to_string()),
-                                        pk: pk.to_owned(),
+                                        parent_pk: Some(p_pk),
+                                        pk: *pk,
                                         url: image_versions2.get(Quality::Best).to_owned(),
 
                                         metadata: MetadataContainer {
-                                            author_id: carousel_media.owner.id.clone(),
-                                            author_username: carousel_media.owner.username.clone(),
-                                            author_full_name: carousel_media
-                                                .owner
-                                                .full_name
-                                                .clone(),
+                                            author_id: carousel_media.user.id.clone(),
+                                            author_username: carousel_media.user.username.clone(),
+                                            author_full_name: carousel_media.user.full_name.clone(),
                                             post_url: format!(
                                                 "{}/p/{}",
                                                 INSTAGRAM, carousel_media.code
@@ -511,12 +521,9 @@ impl Instagram {
                                         url: video_version_container.get(Quality::Best).to_owned(),
 
                                         metadata: MetadataContainer {
-                                            author_id: carousel_media.owner.id.clone(),
-                                            author_username: carousel_media.owner.username.clone(),
-                                            author_full_name: carousel_media
-                                                .owner
-                                                .full_name
-                                                .clone(),
+                                            author_id: carousel_media.user.id.clone(),
+                                            author_username: carousel_media.user.username.clone(),
+                                            author_full_name: carousel_media.user.full_name.clone(),
                                             post_url: format!(
                                                 "{}/p/{}",
                                                 INSTAGRAM, carousel_media.code
@@ -531,7 +538,7 @@ impl Instagram {
                     }
                     ProductType::Feed => {
                         let mut feed = serde_json::from_value::<Feed>(item["media"].clone())?;
-                        feed.pk = p_pk.to_owned();
+                        feed.pk = p_pk;
 
                         slide_list.push(feed.into());
                     }
@@ -582,7 +589,7 @@ mod tests {
     fn test_get_file_name() {
         let photo: Photo = Photo {
             parent_pk: None,
-            pk: String::from("3938716240889371107"),
+            pk: 3938716240889371107_u64,
             url: String::from(
                 "https://instagram.fcmb3-2.fna.fbcdn.net/o1/v/t2/f2/m86/AQPXRRddBe2JJvoH1tkqbcCbClRrUAvH_fu0ZNeuhMWzDILYM-9hUvy9HU19g044dFtQs.mp4?_nc_cat=1039&_nc_oc=AddobZtPa56R2FE4vbiRQ9ItVVq8T4rwVQ5CgLdXN15NBdxBWH91DnresolFYniKMdjQ&_nc_sid=5e9851&_nc_ht=instagram.fcmb3-2.fna.fbcdn.net&_nc_ohc=MEb55SECVPIQ7kNvwHtinuz&efg=eyJ2ZW5jb2RlX3RhZyI6Inhwdl9wcm9ncmVzc2l2ZS5JTlNUQUdSQU0uQ0xJUFMuQzIuNzIwLmRhc2hfYmFzZWxpbmVfMV92MSIsInhwdl9hc3NldF9pZCI6MTA1dfgMzkxNzYyMfferfgdfgDUwMDM2MywiYXNzZXRfYWdlX2RheXMiOjMsInZpX3VzZWNhc2VfaWQiOjEwMDk5LCJkdXJhdGlvbl9zIjo2NywidXJsZ2VuX3NvdXJjZSI6Ind3dyJ9&ccb=17-1&vs=6791aerer04de3620e3f&_nc_vs=HBksddFQIYUmertlnX3hwdl9yZWVsc19wZXJtYW5lbnRfc3JfcHJvZC9DMTQzRDRBNzQ5RUI1OTcxNkI5RjVGMkFBRjhFRUZBMV92aWRlb19kYXNoaW5pdC5tcDQVAALIARIAFQIYUWlnX3hwdl9wbGFjZW1lbnRfcGVybWFuZW50X3YyL0ZDNEMzOTY1Q0JGNTEyOEQ3MEZBNEIyMDcyMTY4NkJBX2F1ZGlvX2Rhc2hpbml0Lm1wNBUCAsgBEgAoABgwerweAGwKIB3VzZV9vaWwBMRJwcm9ncmVzc2l2ZV9yZWNpcGUBMRUAACaW3qOWiqLfAxUCKAJDMiwXQFDgAAAAAAAYEmRhc2hfYmFzZWxpbmVfMV92MREAdf4HZeadAQA&_nc_gid=3_iO4Il340bLyzPHoQCQgQ&_nc_ss=7a22e&_nc_map=urlgen_bucketless&_nc_zt=28&oh=00_AQD-bRxC-th9QoaOTtrtert1f2EU_5WWC9V5fYudd5xtgAh5BetaGA&oe=6A6Aert5ECE",
             ),
